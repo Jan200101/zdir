@@ -57,6 +57,7 @@ pub fn renderPage(writer: *Writer, path: []const u8) !void {
         \\<table>
         \\<thead>
         \\<th>Name</th>
+        \\<th>Type</th>
         \\<th>Last Modified</th>
         \\<th>Size</th>
         \\</thead>
@@ -64,15 +65,10 @@ pub fn renderPage(writer: *Writer, path: []const u8) !void {
     );
 
     dirblk: {
-        var p = blk: {
-            if (path[0] == '/') {
-                break :blk path[1..];
-            }
-            break :blk path;
-        };
-
-        if (p.len == 0)
-            p = ".";
+        const p = if (path.len <= 1)
+            "."
+        else
+            path[1..];
 
         var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch break :dirblk;
         defer dir.close();
@@ -89,6 +85,8 @@ pub fn renderPage(writer: *Writer, path: []const u8) !void {
             if (content.kind == .directory)
                 try writer.writeAll("/");
             try writer.writeAll("</a></td><td>");
+            try writer.writeAll(@tagName(content.kind));
+            try writer.writeAll("</td><td>");
             try writer.writeAll("</td><td>");
             if (content.kind == .file)
                 try writer.writeAll("0");
