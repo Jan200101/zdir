@@ -56,7 +56,7 @@ fn handleRequest(request: *HttpServer.Request) !void {
     } });
     const writer = &response.writer;
 
-    const sane_path = try std.fs.path.resolve(bfa, &[_][]const u8{ "/", request.head.target });
+    const sane_path = try std.fs.path.resolvePosix(bfa, &[_][]const u8{ "/", request.head.target });
 
     log.debug("target {s}", .{request.head.target});
     log.debug("path {s}", .{sane_path});

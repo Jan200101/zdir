@@ -1,6 +1,7 @@
 const std = @import("std");
 const log = std.log;
 const Writer = std.Io.Writer;
+const ComponentIterator = std.fs.path.ComponentIterator;
 
 pub const head_html = @embedFile("head.html");
 pub const style_css = @embedFile("style.css");
@@ -26,46 +27,28 @@ pub fn renderPage(writer: *Writer, path: []const u8) !void {
         \\<div id="top">
     );
 
-    var start_index: usize = 0;
-
-    var loop = true;
-    while (loop) {
-        const index = blk: {
-            const start = start_index;
-            const i = std.mem.indexOfPosLinear(u8, path, start, "/") orelse path.len;
-            start_index = i + 1;
-
-            log.debug("start {} i {}", .{ start, i });
-
-            var e = i + 1;
-            if (i == path.len) {
-                loop = false;
-                e = i;
-            }
-
-            if (i > 0 and start >= i)
-                continue;
-
-            break :blk .{
-                .start = start,
-                .end = i,
-                .full = e,
-            };
-        };
-
+    const PosixComponentIterator = ComponentIterator(.posix, u8);
+    {
+        var iter = try PosixComponentIterator.init(path);
         try writer.writeAll(
-            \\<a class="crumb" href="
+            \\<a class="crumb" href="/"></a>
         );
 
-        try writer.writeAll(path[0..index.full]);
+        while (iter.next()) |content| {
+            try writer.writeAll(
+                \\<a class="crumb" href="
+            );
 
-        try writer.writeAll("\">");
+            try writer.writeAll(content.path);
 
-        try writer.writeAll(path[index.start..index.end]);
+            try writer.writeAll("\">");
 
-        try writer.writeAll(
-            \\</a>
-        );
+            try writer.writeAll(content.name);
+
+            try writer.writeAll(
+                \\</a>
+            );
+        }
     }
 
     try writer.writeAll(
@@ -83,15 +66,13 @@ pub fn renderPage(writer: *Writer, path: []const u8) !void {
     dirblk: {
         var p = blk: {
             if (path[0] == '/') {
-                break :blk path[1..path.len];
+                break :blk path[1..];
             }
             break :blk path;
         };
 
         if (p.len == 0)
             p = ".";
-
-        log.debug("p {s}", .{p});
 
         var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch break :dirblk;
         defer dir.close();
@@ -105,6 +86,8 @@ pub fn renderPage(writer: *Writer, path: []const u8) !void {
             try writer.writeAll(content.name);
             try writer.writeAll("\">");
             try writer.writeAll(content.name);
+            if (content.kind == .directory)
+                try writer.writeAll("/");
             try writer.writeAll("</a></td><td>");
             try writer.writeAll("</td><td>");
             if (content.kind == .file)
