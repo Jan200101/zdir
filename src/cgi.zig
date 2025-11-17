@@ -3,13 +3,12 @@ const builtin = @import("builtin");
 
 const code = @import("code");
 
-var fixed_buffer: [2048]u8 = undefined;
-var fixed_allocator: std.heap.FixedBufferAllocator = .init(&fixed_buffer);
-
 var stdout_buffer: [1024]u8 = undefined;
 
 pub fn main() !void {
-    const allocator = fixed_allocator.allocator();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     var stdout = std.fs.File.stdout().writer(&stdout_buffer);
     const writer = &stdout.interface;

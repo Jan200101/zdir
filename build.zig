@@ -4,11 +4,24 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const root_path = b.option([]const u8, "root", "root") orelse ".";
+    {
+        var dir = std.fs.cwd().openDir(root_path, .{}) catch |err| {
+            std.debug.print("{s} is not a directory: {s}\n", .{ root_path, @errorName(err) });
+            std.process.exit(1);
+        };
+        dir.close();
+    }
+
+    const options = b.addOptions();
+    options.addOption([]const u8, "root_path", root_path);
+
     const mod = b.addModule("code", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
 
+    mod.addOptions("config", options);
     mod.addAnonymousImport("head.html", .{ .root_source_file = b.path("assets/head.html") });
     mod.addAnonymousImport("body.html", .{ .root_source_file = b.path("assets/body.html") });
     mod.addAnonymousImport("root.html", .{ .root_source_file = b.path("assets/root.html") });

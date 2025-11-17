@@ -2,8 +2,11 @@ const std = @import("std");
 const log = std.log;
 const Allocator = std.mem.Allocator;
 const ComponentIterator = std.fs.path.ComponentIterator;
+const Dir = std.fs.Dir;
 const PosixComponentIterator = ComponentIterator(.posix, u8);
 const Writer = std.Io.Writer;
+
+pub const config = @import("config");
 
 pub const head_html = @embedFile("head.html");
 pub const body_html = @embedFile("body.html");
@@ -25,12 +28,14 @@ pub const Head = struct {
 };
 
 pub const Body = struct {
-    path: []const u8,
     allocator: Allocator,
+    root_dir: std.fs.Dir,
+    path: []const u8,
 
-    pub fn init(allocator: Allocator, path: []const u8) @This() {
+    pub fn init(allocator: Allocator, root_dir: std.fs.Dir, path: []const u8) @This() {
         return .{
             .allocator = allocator,
+            .root_dir = root_dir,
             .path = path,
         };
     }
@@ -38,7 +43,7 @@ pub const Body = struct {
     pub fn format(self: @This(), writer: *std.Io.Writer) !void {
         try writer.print(body_html, .{
             Crumb.init(self.path),
-            FileTable.init(self.allocator, self.path),
+            FileTable.init(self.allocator, self.root_dir, self.path),
         });
     }
 };
@@ -67,14 +72,26 @@ pub const Crumb = struct {
 };
 
 pub const FileTable = struct {
-    path: []const u8,
     allocator: Allocator,
+    root_dir: std.fs.Dir,
+    path: []const u8,
 
-    pub fn init(allocator: Allocator, path: []const u8) @This() {
+    pub fn init(allocator: Allocator, root_dir: std.fs.Dir, path: []const u8) @This() {
         return .{
             .allocator = allocator,
+            .root_dir = root_dir,
             .path = path,
         };
+    }
+
+    pub fn sortDirEntry(_: void, a: Dir.Entry, b: Dir.Entry) bool {
+        if (a.kind != b.kind) {
+            if (a.kind == .directory)
+                return true;
+            if (b.kind == .directory)
+                return false;
+        }
+        return std.ascii.orderIgnoreCase(a.name, b.name) == .lt;
     }
 
     pub fn format(self: @This(), writer: *std.Io.Writer) !void {
@@ -83,7 +100,7 @@ pub const FileTable = struct {
         else
             self.path[1..];
 
-        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch |err| {
+        var dir = self.root_dir.openDir(p, .{ .iterate = true }) catch |err| {
             log.err(
                 "failed to open {s}: {s}",
                 .{ p, @errorName(err) },
@@ -92,8 +109,44 @@ pub const FileTable = struct {
         };
         defer dir.close();
 
+        var contents: std.array_list.Aligned(Dir.Entry, null) = .empty;
+        defer contents.deinit(self.allocator);
+
         var iter = dir.iterateAssumeFirstIteration();
         while (iter.next() catch return) |content| {
+            var store = content;
+            store.name = self.allocator.dupe(u8, content.name) catch |err| {
+                log.err(
+                    "failed to allocate {s}: {s}",
+                    .{ content.name, @errorName(err) },
+                );
+                return;
+            };
+
+            contents.append(self.allocator, store) catch |err| {
+                log.err(
+                    "failed to append {s}: {s}",
+                    .{ store.name, @errorName(err) },
+                );
+                self.allocator.free(store.name);
+
+                return;
+            };
+        }
+
+        const content_slice = contents.toOwnedSlice(self.allocator) catch |err| {
+            log.err(
+                "failed to own slice: {s}",
+                .{@errorName(err)},
+            );
+            return;
+        };
+        defer self.allocator.free(content_slice);
+        std.mem.sort(Dir.Entry, content_slice, {}, sortDirEntry);
+
+        for (content_slice) |content| {
+            defer self.allocator.free(content.name);
+
             const suffix = if (content.kind == .directory)
                 "/"
             else
@@ -104,7 +157,7 @@ pub const FileTable = struct {
                     "failed to join {s} {s}: {s}",
                     .{ self.path, content.name, @errorName(err) },
                 );
-                return;
+                continue;
             };
             defer self.allocator.free(full_path);
 
@@ -123,14 +176,18 @@ pub const FileTable = struct {
     }
 };
 
+fn getRoot() !std.fs.Dir {
+    return try std.fs.cwd().openDir(config.root_path, .{});
+}
+
 pub fn serve(allocator: Allocator, writer: *Writer, path: []const u8) !void {
-    const root_dir = std.fs.cwd();
+    var root_dir = try getRoot();
+    defer root_dir.close();
+
     const p = if (path.len <= 1)
         "."
     else
         path[1..];
-
-    log.debug("1 {s}", .{p});
 
     const stat = root_dir.statFile(p) catch |err| {
         try writer.print("Failed to stat {s}: {s}", .{ p, @errorName(err) });
@@ -141,7 +198,7 @@ pub fn serve(allocator: Allocator, writer: *Writer, path: []const u8) !void {
         .directory => {
             try writer.print(root_html, .{
                 Head.init(path),
-                Body.init(allocator, path),
+                Body.init(allocator, root_dir, path),
             });
         },
         else => {

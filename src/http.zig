@@ -8,9 +8,6 @@ const Address = std.net.Address;
 
 const code = @import("code");
 
-var fixed_buffer: [2048]u8 = undefined;
-var fixed_allocator: std.heap.FixedBufferAllocator = .init(&fixed_buffer);
-
 pub fn main() !void {
     const addr = try Address.parseIp("127.0.0.1", 8884);
     var server = try Address.listen(addr, .{ .reuse_address = true });
@@ -50,7 +47,9 @@ pub fn main() !void {
 }
 
 fn handleRequest(request: *HttpServer.Request) !void {
-    const allocator = fixed_allocator.allocator();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     var response_buffer: [1024]u8 = undefined;
     var response = try request.respondStreaming(&response_buffer, .{ .respond_options = .{
@@ -58,7 +57,9 @@ fn handleRequest(request: *HttpServer.Request) !void {
     } });
     const writer = &response.writer;
 
-    const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", request.head.target });
+    var target_path: [1024]u8 = undefined;
+
+    const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", std.Uri.percentDecodeBackwards(&target_path, request.head.target) });
     defer allocator.free(sane_path);
 
     code.serve(allocator, writer, sane_path) catch |err| {
