@@ -1,0 +1,13 @@
+.{
+    .name = .zdir,
+    .version = "0.0.0",
+    .fingerprint = 0x602c3ce6f4c8b78d,
+
+    .dependencies = .{},
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
