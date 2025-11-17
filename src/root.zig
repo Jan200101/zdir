@@ -1,104 +1,119 @@
 const std = @import("std");
 const log = std.log;
-const Writer = std.Io.Writer;
+const Allocator = std.mem.Allocator;
 const ComponentIterator = std.fs.path.ComponentIterator;
+const PosixComponentIterator = ComponentIterator(.posix, u8);
+const Writer = std.Io.Writer;
 
 pub const head_html = @embedFile("head.html");
+pub const body_html = @embedFile("body.html");
+pub const root_html = @embedFile("root.html");
 pub const style_css = @embedFile("style.css");
 
-pub fn renderPage(writer: *Writer, path: []const u8) !void {
-    try writer.writeAll(
-        \\<!DOCTYPE html>
-        \\<head>
-        \\<title>
-    );
-    try writer.writeAll(path);
-    try writer.writeAll("</title>");
+pub const Head = struct {
+    path: []const u8,
 
-    try writer.writeAll(head_html);
+    pub fn init(path: []const u8) @This() {
+        return .{
+            .path = path,
+        };
+    }
 
-    try writer.writeAll("<style>");
-    try writer.writeAll(style_css);
-    try writer.writeAll("</style>");
+    pub fn format(self: @This(), writer: *std.Io.Writer) !void {
+        try writer.print(head_html, .{ self.path, style_css });
+    }
+};
 
-    try writer.writeAll(
-        \\</head>
-        \\<body>
-        \\<div id="top">
-    );
+pub const Body = struct {
+    path: []const u8,
+    allocator: Allocator,
 
-    const PosixComponentIterator = ComponentIterator(.posix, u8);
-    {
-        var iter = try PosixComponentIterator.init(path);
+    pub fn init(allocator: Allocator, path: []const u8) @This() {
+        return .{
+            .allocator = allocator,
+            .path = path,
+        };
+    }
+
+    pub fn format(self: @This(), writer: *std.Io.Writer) !void {
+        try writer.print(body_html, .{
+            Crumb.init(self.path),
+            FileTable.init(self.allocator, self.path),
+        });
+    }
+};
+
+pub const Crumb = struct {
+    path: []const u8,
+
+    pub fn init(path: []const u8) @This() {
+        return .{
+            .path = path,
+        };
+    }
+
+    pub fn format(self: @This(), writer: *std.Io.Writer) !void {
         try writer.writeAll(
             \\<a class="crumb" href="/"></a>
         );
 
-        while (iter.next()) |content| {
-            try writer.writeAll(
-                \\<a class="crumb" href="
-            );
-
-            try writer.writeAll(content.path);
-
-            try writer.writeAll("\">");
-
-            try writer.writeAll(content.name);
-
-            try writer.writeAll(
-                \\</a>
-            );
+        var iterator: PosixComponentIterator = try .init(self.path);
+        while (iterator.next()) |content| {
+            try writer.print(
+                \\<a class="crumb" href="{s}">{s}</a>
+            , .{ content.path, content.name });
         }
     }
+};
 
-    try writer.writeAll(
-        \\</div>
-        \\<div id="main">
-        \\<table>
-        \\<thead>
-        \\<th>Name</th>
-        \\<th>Type</th>
-        \\<th>Last Modified</th>
-        \\<th>Size</th>
-        \\</thead>
-        \\<tbody>
-    );
+pub const FileTable = struct {
+    path: []const u8,
+    allocator: Allocator,
 
-    dirblk: {
-        const p = if (path.len <= 1)
+    pub fn init(allocator: Allocator, path: []const u8) @This() {
+        return .{
+            .allocator = allocator,
+            .path = path,
+        };
+    }
+
+    pub fn format(self: @This(), writer: *std.Io.Writer) !void {
+        const p = if (self.path.len <= 1)
             "."
         else
-            path[1..];
+            self.path[1..];
 
-        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch break :dirblk;
+        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch return;
         defer dir.close();
 
         var iter = dir.iterateAssumeFirstIteration();
-        while (try iter.next()) |content| {
-            try writer.writeAll("<tr><td><a href=\"");
-            try writer.writeAll(path);
-            if (path[path.len - 1] != '/')
-                try writer.writeAll("/");
-            try writer.writeAll(content.name);
-            try writer.writeAll("\">");
-            try writer.writeAll(content.name);
-            if (content.kind == .directory)
-                try writer.writeAll("/");
-            try writer.writeAll("</a></td><td>");
-            try writer.writeAll(@tagName(content.kind));
-            try writer.writeAll("</td><td>");
-            try writer.writeAll("</td><td>");
+        while (iter.next() catch return) |content| {
+            const suffix = if (content.kind == .directory)
+                "/"
+            else
+                "";
+
+            const full_path = std.fs.path.join(self.allocator, &[_][]const u8{ self.path, content.name }) catch return;
+            defer self.allocator.free(full_path);
+
+            try writer.print(
+                \\<tr><td><a href="{s}">{s}{s}</a></td>
+            , .{ full_path, content.name, suffix });
+
+            try writer.print("<td>{s}</td>", .{@tagName(content.kind)});
+            try writer.print("<td></td>", .{});
             if (content.kind == .file)
-                try writer.writeAll("0");
-            try writer.writeAll("</td></tr>");
+                try writer.print("<td>{}</td>", .{0})
+            else
+                try writer.writeAll("<td></td>");
+            try writer.writeAll("</tr>");
         }
     }
+};
 
-    try writer.writeAll(
-        \\</tbody>
-        \\</table>
-        \\</div>
-        \\</body>
-        \\</html>
-    );
+pub fn renderPage(allocator: Allocator, writer: *Writer, path: []const u8) !void {
+    try writer.print(root_html, .{
+        Head.init(path),
+        Body.init(allocator, path),
+    });
 }

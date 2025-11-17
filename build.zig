@@ -5,19 +5,13 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const mod = b.addModule("code", .{
-        // The root source file is the "entry point" of this module. Users of
-        // this module will only be able to access public declarations contained
-        // in this file, which means that if you have declarations that you
-        // intend to expose to consumers that were defined in other files part
-        // of this module, you will have to make sure to re-export them from
-        // the root file.
         .root_source_file = b.path("src/root.zig"),
-        // Later on we'll use this module as the root module of a test executable
-        // which requires us to specify a target.
         .target = target,
     });
 
     mod.addAnonymousImport("head.html", .{ .root_source_file = b.path("assets/head.html") });
+    mod.addAnonymousImport("body.html", .{ .root_source_file = b.path("assets/body.html") });
+    mod.addAnonymousImport("root.html", .{ .root_source_file = b.path("assets/root.html") });
     mod.addAnonymousImport("style.css", .{ .root_source_file = b.path("assets/style.css") });
 
     const exe = b.addExecutable(.{

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const log = std.log;
 const http = std.http;
@@ -6,6 +7,11 @@ const HttpServer = http.Server;
 const Address = std.net.Address;
 
 const code = @import("code");
+
+var fixed_buffer: [2048]u8 = undefined;
+var fixed_allocator: std.heap.FixedBufferAllocator = .init(&fixed_buffer);
+
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 
 pub fn main() !void {
     const addr = try Address.parseIp("127.0.0.1", 8884);
@@ -46,9 +52,12 @@ pub fn main() !void {
 }
 
 fn handleRequest(request: *HttpServer.Request) !void {
-    var alloc_buffer: [1024]u8 = undefined;
-    var alloc: std.heap.FixedBufferAllocator = .init(&alloc_buffer);
-    const bfa = alloc.allocator();
+    const allocator = switch (builtin.mode) {
+        .Debug => debug_allocator.allocator(),
+        else => fixed_allocator.allocator(),
+    };
+
+    log.debug("{}", .{builtin.mode});
 
     var response_buffer: [1024]u8 = undefined;
     var response = try request.respondStreaming(&response_buffer, .{ .respond_options = .{
@@ -56,12 +65,12 @@ fn handleRequest(request: *HttpServer.Request) !void {
     } });
     const writer = &response.writer;
 
-    const sane_path = try std.fs.path.resolvePosix(bfa, &[_][]const u8{ "/", request.head.target });
+    const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", request.head.target });
+    defer allocator.free(sane_path);
 
-    log.debug("target {s}", .{request.head.target});
-    log.debug("path {s}", .{sane_path});
-
-    try code.renderPage(writer, sane_path);
+    code.renderPage(allocator, writer, sane_path) catch |err| {
+        try writer.print("err {s}", .{@errorName(err)});
+    };
 
     try response.end();
 }
