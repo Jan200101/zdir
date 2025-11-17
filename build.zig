@@ -14,10 +14,10 @@ pub fn build(b: *std.Build) void {
     mod.addAnonymousImport("root.html", .{ .root_source_file = b.path("assets/root.html") });
     mod.addAnonymousImport("style.css", .{ .root_source_file = b.path("assets/style.css") });
 
-    const exe = b.addExecutable(.{
-        .name = "code",
+    const http_exe = b.addExecutable(.{
+        .name = "zdir-http",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/http.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -25,18 +25,35 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    b.installArtifact(http_exe);
 
-    b.installArtifact(exe);
+    const cgi_exe = b.addExecutable(.{
+        .name = "zdir-cgi",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/cgi.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "code", .module = mod },
+            },
+        }),
+    });
+    b.installArtifact(cgi_exe);
 
-    const run_step = b.step("run", "Run the app");
-
-    const run_cmd = b.addRunArtifact(exe);
+    const run_step = b.step("run", "Run the HTTP App");
+    const run_cmd = b.addRunArtifact(http_exe);
     run_step.dependOn(&run_cmd.step);
 
+    const cgi_run_step = b.step("run-cgi", "Run the CGI App");
+    const cgi_run_cmd = b.addRunArtifact(cgi_exe);
+    cgi_run_step.dependOn(&cgi_run_cmd.step);
+
     run_cmd.step.dependOn(b.getInstallStep());
+    cgi_run_cmd.step.dependOn(b.getInstallStep());
 
     if (b.args) |args| {
         run_cmd.addArgs(args);
+        cgi_run_cmd.addArgs(args);
     }
 
     const mod_tests = b.addTest(.{
@@ -46,7 +63,7 @@ pub fn build(b: *std.Build) void {
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
     const exe_tests = b.addTest(.{
-        .root_module = exe.root_module,
+        .root_module = http_exe.root_module,
     });
 
     const run_exe_tests = b.addRunArtifact(exe_tests);

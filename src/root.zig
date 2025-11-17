@@ -83,7 +83,13 @@ pub const FileTable = struct {
         else
             self.path[1..];
 
-        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch return;
+        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch |err| {
+            log.err(
+                "failed to open {s}: {s}",
+                .{ p, @errorName(err) },
+            );
+            return;
+        };
         defer dir.close();
 
         var iter = dir.iterateAssumeFirstIteration();
@@ -93,7 +99,13 @@ pub const FileTable = struct {
             else
                 "";
 
-            const full_path = std.fs.path.join(self.allocator, &[_][]const u8{ self.path, content.name }) catch return;
+            const full_path = std.fs.path.join(self.allocator, &[_][]const u8{ self.path, content.name }) catch |err| {
+                log.err(
+                    "failed to join {s} {s}: {s}",
+                    .{ self.path, content.name, @errorName(err) },
+                );
+                return;
+            };
             defer self.allocator.free(full_path);
 
             try writer.print(
@@ -111,9 +123,36 @@ pub const FileTable = struct {
     }
 };
 
-pub fn renderPage(allocator: Allocator, writer: *Writer, path: []const u8) !void {
-    try writer.print(root_html, .{
-        Head.init(path),
-        Body.init(allocator, path),
-    });
+pub fn serve(allocator: Allocator, writer: *Writer, path: []const u8) !void {
+    const root_dir = std.fs.cwd();
+    const p = if (path.len <= 1)
+        "."
+    else
+        path[1..];
+
+    log.debug("1 {s}", .{p});
+
+    const stat = root_dir.statFile(p) catch |err| {
+        try writer.print("Failed to stat {s}: {s}", .{ p, @errorName(err) });
+        return;
+    };
+
+    switch (stat.kind) {
+        .directory => {
+            try writer.print(root_html, .{
+                Head.init(path),
+                Body.init(allocator, path),
+            });
+        },
+        else => {
+            const file = root_dir.openFile(p, .{}) catch |err| {
+                try writer.print("Failed to open {s}: {s}", .{ p, @errorName(err) });
+                return;
+            };
+            defer file.close();
+
+            var reader = file.reader(&.{});
+            _ = try writer.sendFileAll(&reader, .unlimited);
+        },
+    }
 }
