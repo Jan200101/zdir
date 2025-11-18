@@ -9,7 +9,7 @@ const Address = std.net.Address;
 const code = @import("code");
 
 pub fn main() !void {
-    const addr = try Address.parseIp("127.0.0.1", 8884);
+    const addr = try Address.parseIp("127.0.0.1", code.config.http_port);
     var server = try Address.listen(addr, .{ .reuse_address = true });
     defer server.deinit();
 

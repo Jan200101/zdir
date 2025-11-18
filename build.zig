@@ -5,19 +5,11 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const root_path = b.option([]const u8, "root", "root") orelse ".";
-    blk: {
-        if (!target.query.isNative())
-            break :blk;
-
-        var dir = std.fs.cwd().openDir(root_path, .{}) catch |err| {
-            std.debug.print("{s} is not a directory: {s}\n", .{ root_path, @errorName(err) });
-            std.process.exit(1);
-        };
-        dir.close();
-    }
+    const http_port = b.option(u32, "port", "HTTP Port") orelse 8888;
 
     const options = b.addOptions();
     options.addOption([]const u8, "root_path", root_path);
+    options.addOption(u32, "http_port", http_port);
 
     const mod = b.addModule("code", .{
         .root_source_file = b.path("src/root.zig"),
