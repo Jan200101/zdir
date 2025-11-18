@@ -5,7 +5,10 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const root_path = b.option([]const u8, "root", "root") orelse ".";
-    {
+    blk: {
+        if (!target.query.isNative())
+            break :blk;
+
         var dir = std.fs.cwd().openDir(root_path, .{}) catch |err| {
             std.debug.print("{s} is not a directory: {s}\n", .{ root_path, @errorName(err) });
             std.process.exit(1);

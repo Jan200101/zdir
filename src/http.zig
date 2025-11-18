@@ -62,9 +62,14 @@ fn handleRequest(request: *HttpServer.Request) !void {
     const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", std.Uri.percentDecodeBackwards(&target_path, request.head.target) });
     defer allocator.free(sane_path);
 
-    code.serve(allocator, writer, sane_path) catch |err| {
-        try writer.print("Failed to serve content: {s}", .{@errorName(err)});
-    };
+    var root_dir = try code.getRoot();
+    defer root_dir.close();
+
+    if (code.canServeFile(root_dir, sane_path)) {
+        try code.serveFile(root_dir, writer, sane_path);
+    } else {
+        try code.serveDir(allocator, root_dir, writer, sane_path);
+    }
 
     try response.end();
 }

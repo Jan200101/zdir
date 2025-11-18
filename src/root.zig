@@ -114,6 +114,9 @@ pub const FileTable = struct {
 
         var iter = dir.iterateAssumeFirstIteration();
         while (iter.next() catch return) |content| {
+            if (content.name[0] == '.')
+                continue;
+
             var store = content;
             store.name = self.allocator.dupe(u8, content.name) catch |err| {
                 log.err(
@@ -176,40 +179,37 @@ pub const FileTable = struct {
     }
 };
 
-fn getRoot() !std.fs.Dir {
+pub fn getRoot() !std.fs.Dir {
     return try std.fs.cwd().openDir(config.root_path, .{});
 }
 
-pub fn serve(allocator: Allocator, writer: *Writer, path: []const u8) !void {
-    var root_dir = try getRoot();
-    defer root_dir.close();
-
+pub fn canServeFile(root_dir: std.fs.Dir, path: []const u8) bool {
     const p = if (path.len <= 1)
         "."
     else
         path[1..];
 
-    const stat = root_dir.statFile(p) catch |err| {
-        try writer.print("Failed to stat {s}: {s}", .{ p, @errorName(err) });
-        return;
-    };
+    const stat = root_dir.statFile(p) catch return false;
 
-    switch (stat.kind) {
-        .directory => {
-            try writer.print(root_html, .{
-                Head.init(path),
-                Body.init(allocator, root_dir, path),
-            });
-        },
-        else => {
-            const file = root_dir.openFile(p, .{}) catch |err| {
-                try writer.print("Failed to open {s}: {s}", .{ p, @errorName(err) });
-                return;
-            };
-            defer file.close();
+    return stat.kind != .directory;
+}
 
-            var reader = file.reader(&.{});
-            _ = try writer.sendFileAll(&reader, .unlimited);
-        },
-    }
+pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void {
+    const p = if (path.len <= 1)
+        "."
+    else
+        path[1..];
+
+    const file = try root_dir.openFile(p, .{});
+    defer file.close();
+
+    var reader = file.reader(&.{});
+    _ = try writer.sendFileAll(&reader, .unlimited);
+}
+
+pub fn serveDir(allocator: Allocator, root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void {
+    try writer.print(root_html, .{
+        Head.init(path),
+        Body.init(allocator, root_dir, path),
+    });
 }
