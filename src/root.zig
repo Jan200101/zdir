@@ -201,17 +201,18 @@ pub const FileTable = struct {
                 \\<tr><td><a href="{s}">{s}{s}</a></td>
             , .{ full_path, content.name, suffix });
 
-            const size = blk: {
-                const stat = dir.statFile(content.name) catch break :blk 0;
-
-                break :blk stat.size;
-            };
-
             try writer.print("<td>{s}</td>", .{@tagName(content.kind)});
-            if (content.kind == .file)
-                try writer.print("<td>{}</td>", .{size})
-            else
+            if (content.kind == .file) {
+                const size = blk: {
+                    const stat = dir.statFile(content.name) catch break :blk 0;
+
+                    break :blk stat.size;
+                };
+
+                try writer.print("<td>{}</td>", .{size});
+            } else {
                 try writer.writeAll("<td></td>");
+            }
             try writer.writeAll("</tr>");
         }
     }
@@ -254,7 +255,13 @@ pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void 
         return;
     }
 
-    const file = try root_dir.openFile(p, .{});
+    const file = root_dir.openFile(p, .{}) catch |err| {
+        try writer.print("Failed to open {s}: {s}", .{
+            p,
+            @errorName(err),
+        });
+        return;
+    };
     defer file.close();
 
     var reader = file.reader(&.{});
