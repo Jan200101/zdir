@@ -18,8 +18,10 @@ const Ext = enum {
     py,
     lua,
     php,
+
     csv,
     html,
+    css,
 
     zip,
     tar,
@@ -39,10 +41,21 @@ const Ext = enum {
 
     pub fn contentType(self: Ext) []const u8 {
         return switch (self) {
-            .txt, .md, .map, .spec, .sha256sum, .sha512sum, .c, .py, .lua, .php => "text/plain",
+            .txt,
+            .md,
+            .map,
+            .spec,
+            .sha256sum,
+            .sha512sum,
+            .c,
+            .py,
+            .lua,
+            .php,
+            => "text/plain",
 
             .csv => "text/csv",
             .html => "text/html",
+            .css => "text/css",
 
             .zip => "application/zip",
             .tar => "application/x-tar",

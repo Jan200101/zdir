@@ -13,6 +13,19 @@ pub const body_html = @embedFile("body.html");
 pub const root_html = @embedFile("root.html");
 pub const style_css = @embedFile("style.css");
 
+const assets_path = "_zdir";
+const assets_dir = assets_path ++ "/";
+
+const Asset = enum {
+    @"style.css",
+
+    pub fn content(self: Asset) []const u8 {
+        return switch (self) {
+            .@"style.css" => style_css,
+        };
+    }
+};
+
 pub const Head = struct {
     path: []const u8,
 
@@ -23,7 +36,7 @@ pub const Head = struct {
     }
 
     pub fn format(self: @This(), writer: *std.Io.Writer) !void {
-        try writer.print(head_html, .{ self.path, style_css });
+        try writer.print(head_html, .{ self.path, assets_path });
     }
 };
 
@@ -189,6 +202,9 @@ pub fn canServeFile(root_dir: std.fs.Dir, path: []const u8) bool {
     else
         path[1..];
 
+    if (std.mem.startsWith(u8, p, assets_path))
+        return true;
+
     const stat = root_dir.statFile(p) catch return false;
 
     return stat.kind != .directory;
@@ -199,6 +215,19 @@ pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void 
         "."
     else
         path[1..];
+
+    if (std.mem.startsWith(u8, p, assets_path)) {
+        if (!std.mem.startsWith(u8, p, assets_dir))
+            return;
+
+        const asset_path = p[assets_dir.len..];
+        log.debug("asset_path {s}", .{asset_path});
+        const asset = std.meta.stringToEnum(Asset, asset_path) orelse return;
+
+        _ = try writer.writeAll(asset.content());
+
+        return;
+    }
 
     const file = try root_dir.openFile(p, .{});
     defer file.close();

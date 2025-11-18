@@ -57,9 +57,20 @@ fn handleRequest(request: *HttpServer.Request) !void {
     } });
     const writer = &response.writer;
 
-    var target_path: [1024]u8 = undefined;
+    const target = request.head.target;
+    const abs_path, const query = if (std.mem.indexOfPos(u8, target, 0, "?")) |pos|
+        .{ target[0..pos], target[pos..] }
+    else
+        .{ request.head.target, "" };
 
-    const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", std.Uri.percentDecodeBackwards(&target_path, request.head.target) });
+    _ = query;
+
+    var target_buffer: [1024]u8 = undefined;
+    const resolved_path = std.Uri.percentDecodeBackwards(&target_buffer, abs_path);
+
+    log.debug("requested {s}", .{resolved_path});
+
+    const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", resolved_path });
     defer allocator.free(sane_path);
 
     var root_dir = try code.getRoot();
