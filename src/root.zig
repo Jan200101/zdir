@@ -11,18 +11,34 @@ pub const config = @import("config");
 pub const head_html = @embedFile("head.html");
 pub const body_html = @embedFile("body.html");
 pub const root_html = @embedFile("root.html");
-pub const style_css = @embedFile("style.css");
 
 const assets_path = "_zdir";
 const assets_dir = assets_path ++ "/";
 
 const Asset = enum {
     @"style.css",
+    @"favicon.ico",
 
     pub fn content(self: Asset) []const u8 {
         return switch (self) {
-            .@"style.css" => style_css,
+            .@"style.css" => @embedFile("style.css"),
+            .@"favicon.ico" => @embedFile("favicon.ico"),
         };
+    }
+
+    pub fn is_asset(path: []const u8) bool {
+        if (path.len <= 1)
+            return false;
+
+        const p = path[1..];
+
+        if (std.mem.startsWith(u8, p, assets_path))
+            return true;
+
+        if (std.mem.eql(u8, p, "favicon.ico"))
+            return true;
+
+        return false;
     }
 };
 
@@ -181,10 +197,16 @@ pub const FileTable = struct {
                 \\<tr><td><a href="{s}">{s}{s}</a></td>
             , .{ full_path, content.name, suffix });
 
+            const mtime, const size = blk: {
+                const stat = self.root_dir.statFile(p) catch break :blk .{ 0, 0 };
+
+                break :blk .{ stat.mtime, stat.size };
+            };
+
             try writer.print("<td>{s}</td>", .{@tagName(content.kind)});
-            try writer.print("<td></td>", .{});
+            try writer.print("<td>{}</td>", .{mtime});
             if (content.kind == .file)
-                try writer.print("<td>{}</td>", .{0})
+                try writer.print("<td>{}</td>", .{size})
             else
                 try writer.writeAll("<td></td>");
             try writer.writeAll("</tr>");
@@ -202,7 +224,7 @@ pub fn canServeFile(root_dir: std.fs.Dir, path: []const u8) bool {
     else
         path[1..];
 
-    if (std.mem.startsWith(u8, p, assets_path))
+    if (Asset.is_asset(path))
         return true;
 
     const stat = root_dir.statFile(p) catch return false;
@@ -216,12 +238,12 @@ pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void 
     else
         path[1..];
 
-    if (std.mem.startsWith(u8, p, assets_path)) {
-        if (!std.mem.startsWith(u8, p, assets_dir))
-            return;
-
-        const asset_path = p[assets_dir.len..];
-        log.debug("asset_path {s}", .{asset_path});
+    // reserve asset path completely
+    if (Asset.is_asset(path)) {
+        const asset_path = if (std.mem.startsWith(u8, p, assets_dir))
+            p[assets_dir.len..]
+        else
+            p;
         const asset = std.meta.stringToEnum(Asset, asset_path) orelse return;
 
         _ = try writer.writeAll(asset.content());
