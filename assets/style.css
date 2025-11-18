@@ -33,14 +33,21 @@ a:link:hover
 
 
 #main table {
-    --side-width: 15%;
+    --table-width: 850px;
 
-    width: calc(100% - (var(--side-width) * 2));
+    width: var(--table-width);
     margin-top: 30px;
-    margin-left: var(--side-width);
-    margin-right: var(--side-width);
+    margin-left: auto;
+    margin-right: auto;
 
     border-collapse: collapse;
+}
+
+@media screen and (max-width:1020px)
+{
+    #main table {
+        --table-width: 80%;
+    }
 }
 
 #main td { /* table cells */

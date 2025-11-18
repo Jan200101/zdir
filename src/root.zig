@@ -1,5 +1,9 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const log = std.log;
+const linux = std.os.linux;
+const posix = std.posix;
 const Allocator = std.mem.Allocator;
 const ComponentIterator = std.fs.path.ComponentIterator;
 const Dir = std.fs.Dir;
@@ -197,14 +201,13 @@ pub const FileTable = struct {
                 \\<tr><td><a href="{s}">{s}{s}</a></td>
             , .{ full_path, content.name, suffix });
 
-            const mtime, const size = blk: {
-                const stat = self.root_dir.statFile(p) catch break :blk .{ 0, 0 };
+            const size = blk: {
+                const stat = dir.statFile(content.name) catch break :blk 0;
 
-                break :blk .{ stat.mtime, stat.size };
+                break :blk stat.size;
             };
 
             try writer.print("<td>{s}</td>", .{@tagName(content.kind)});
-            try writer.print("<td>{}</td>", .{mtime});
             if (content.kind == .file)
                 try writer.print("<td>{}</td>", .{size})
             else
