@@ -15,13 +15,27 @@ const Ext = enum {
     sha256sum,
     sha512sum,
     c,
+    cpp,
+    h,
     py,
     lua,
+    zig,
+    zon,
     php,
 
     csv,
     html,
     css,
+    pdf,
+
+    png,
+    jpeg,
+    jpg,
+    gif,
+    webp,
+    svg,
+    bmp,
+    ico,
 
     zip,
     tar,
@@ -30,7 +44,6 @@ const Ext = enum {
     @"tar.zstd",
     @"7z",
 
-    pdf,
     bin,
 
     bat,
@@ -48,14 +61,28 @@ const Ext = enum {
             .sha256sum,
             .sha512sum,
             .c,
+            .cpp,
+            .h,
             .py,
             .lua,
+            .zig,
+            .zon,
             .php,
             => "text/plain",
 
             .csv => "text/csv",
             .html => "text/html",
             .css => "text/css",
+            .pdf => "application/pdf",
+
+            .png => "image/png",
+            .jpeg => "image/jpeg",
+            .jpg => "image/jpeg",
+            .gif => "image/gif",
+            .webp => "image/webp",
+            .svg => "image/svg+xml",
+            .bmp => "image/bmp",
+            .ico => "image/x-icon",
 
             .zip => "application/zip",
             .tar => "application/x-tar",
@@ -64,7 +91,6 @@ const Ext = enum {
             .@"tar.zstd" => "application/zstd",
             .@"7z" => "application/x-7z-compressed",
 
-            .pdf => "application/pdf",
             .bin => "application/octet-stream",
 
             .bat,
