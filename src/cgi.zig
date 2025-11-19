@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 
 const log = std.log;
 
-const code = @import("code");
+const core = @import("core");
 
 var stdout_buffer: [1024]u8 = undefined;
 
@@ -91,10 +91,10 @@ pub fn main() !void {
     const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", path });
     defer allocator.free(sane_path);
 
-    var root_dir = try code.getRoot();
+    var root_dir = try core.getRoot();
     defer root_dir.close();
 
-    if (code.canServeFile(root_dir, sane_path)) {
+    if (core.canServeFile(root_dir, sane_path)) {
         const extension = std.fs.path.extension(sane_path);
         const ext_type = if (extension.len > 1)
             std.meta.stringToEnum(Ext, std.fs.path.extension(sane_path)[1..]) orelse .bin
@@ -102,9 +102,9 @@ pub fn main() !void {
             .bin;
 
         try writer.print("Content-Type: {s}; charset=utf-8\n\n", .{ext_type.contentType()});
-        try code.serveFile(root_dir, writer, sane_path);
+        try core.serveFile(root_dir, writer, sane_path);
     } else {
         try writer.writeAll("Content-Type: text/html; charset=utf-8\n\n");
-        try code.serveDir(allocator, root_dir, writer, sane_path);
+        try core.serveDir(allocator, root_dir, writer, sane_path);
     }
 }

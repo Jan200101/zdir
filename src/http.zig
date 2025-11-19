@@ -6,10 +6,10 @@ const http = std.http;
 const HttpServer = http.Server;
 const Address = std.net.Address;
 
-const code = @import("code");
+const core = @import("core");
 
 pub fn main() !void {
-    const addr = try Address.parseIp("127.0.0.1", code.config.http_port);
+    const addr = try Address.parseIp("127.0.0.1", core.config.http_port);
     var server = try Address.listen(addr, .{ .reuse_address = true });
     defer server.deinit();
 
@@ -73,13 +73,13 @@ fn handleRequest(request: *HttpServer.Request) !void {
     const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", resolved_path });
     defer allocator.free(sane_path);
 
-    var root_dir = try code.getRoot();
+    var root_dir = try core.getRoot();
     defer root_dir.close();
 
-    if (code.canServeFile(root_dir, sane_path)) {
-        try code.serveFile(root_dir, writer, sane_path);
+    if (core.canServeFile(root_dir, sane_path)) {
+        try core.serveFile(root_dir, writer, sane_path);
     } else {
-        try code.serveDir(allocator, root_dir, writer, sane_path);
+        try core.serveDir(allocator, root_dir, writer, sane_path);
     }
 
     try response.end();

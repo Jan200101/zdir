@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
     options.addOption([]const u8, "root_path", root_path);
     options.addOption(u32, "http_port", http_port);
 
-    const mod = b.addModule("code", .{
+    const mod = b.addModule("core", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "code", .module = mod },
+                .{ .name = "core", .module = mod },
             },
         }),
     });
@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "code", .module = mod },
+                .{ .name = "core", .module = mod },
             },
         }),
     });
