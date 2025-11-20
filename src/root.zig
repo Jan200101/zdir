@@ -99,7 +99,7 @@ pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void 
 
 pub fn serveDir(allocator: Allocator, root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void {
     try writer.print(root_html, .{
-        Head.init(path),
-        Body.init(allocator, root_dir, path),
+        .head = Head.init(path),
+        .body = Body.init(allocator, root_dir, path),
     });
 }

@@ -16,5 +16,8 @@ pub fn init(path: []const u8) @This() {
 }
 
 pub fn format(self: @This(), writer: *Writer) !void {
-    try writer.print(head_html, .{ self.path, assets_path });
+    try writer.print(head_html, .{
+        .title = self.path,
+        .assets = assets_path,
+    });
 }

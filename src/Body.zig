@@ -23,7 +23,7 @@ pub fn init(allocator: Allocator, root_dir: Dir, path: []const u8) @This() {
 
 pub fn format(self: @This(), writer: *Writer) !void {
     try writer.print(body_html, .{
-        Crumb.init(self.path),
-        FileTable.init(self.allocator, self.root_dir, self.path),
+        .crumbs = Crumb.init(self.path),
+        .files = FileTable.init(self.allocator, self.root_dir, self.path),
     });
 }
