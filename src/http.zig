@@ -55,6 +55,7 @@ fn handleRequest(request: *HttpServer.Request) !void {
     var response = try request.respondStreaming(&response_buffer, .{ .respond_options = .{
         .keep_alive = false,
     } });
+    defer response.end() catch {};
     const writer = &response.writer;
 
     const target = request.head.target;
@@ -83,6 +84,4 @@ fn handleRequest(request: *HttpServer.Request) !void {
     } else {
         try core.serveDir(allocator, root_dir, writer, sane_path);
     }
-
-    try response.end();
 }
