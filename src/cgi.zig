@@ -39,10 +39,15 @@ const Ext = enum {
 
     zip,
     tar,
-    @"tar.gz",
-    @"tar.xz",
-    @"tar.zstd",
     @"7z",
+    cpio,
+    rar,
+
+    gz,
+    xz,
+    zstd,
+    zst,
+    bz2,
 
     bin,
 
@@ -86,10 +91,14 @@ const Ext = enum {
 
             .zip => "application/zip",
             .tar => "application/x-tar",
-            .@"tar.gz" => "application/gzip",
-            .@"tar.xz" => "application/x-xz",
-            .@"tar.zstd" => "application/zstd",
             .@"7z" => "application/x-7z-compressed",
+            .cpio => "application/x-cpio",
+            .rar => "application/x-rar-compressed",
+
+            .gz => "application/gzip",
+            .xz => "application/x-xz",
+            .zstd, .zst => "application/zstd",
+            .bz2 => "application/x-bzip2",
 
             .bin => "application/octet-stream",
 
