@@ -76,7 +76,9 @@ fn handleRequest(request: *HttpServer.Request) !void {
     var root_dir = try core.getRoot();
     defer root_dir.close();
 
-    if (core.canServeFile(root_dir, sane_path)) {
+    if (core.isAsset(sane_path)) {
+        try core.serveAsset(writer, sane_path);
+    } else if (core.canServeFile(root_dir, sane_path)) {
         try core.serveFile(root_dir, writer, sane_path);
     } else {
         try core.serveDir(allocator, root_dir, writer, sane_path);

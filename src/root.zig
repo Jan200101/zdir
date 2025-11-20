@@ -51,6 +51,25 @@ pub fn getRoot() !std.fs.Dir {
     return try std.fs.cwd().openDir(config.root_path, .{});
 }
 
+pub fn isAsset(path: []const u8) bool {
+    return Asset.is_asset(path);
+}
+
+pub fn serveAsset(writer: *Writer, path: []const u8) !void {
+    const p = if (path.len <= 1)
+        "."
+    else
+        path[1..];
+
+    const asset_path = if (std.mem.startsWith(u8, p, assets_dir))
+        p[assets_dir.len..]
+    else
+        p;
+    const asset = std.meta.stringToEnum(Asset, asset_path) orelse return;
+
+    _ = try writer.writeAll(asset.content());
+}
+
 pub fn canServeFile(root_dir: std.fs.Dir, path: []const u8) bool {
     const p = if (path.len <= 1)
         "."
@@ -70,19 +89,6 @@ pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void 
         "."
     else
         path[1..];
-
-    // reserve asset path completely
-    if (Asset.is_asset(path)) {
-        const asset_path = if (std.mem.startsWith(u8, p, assets_dir))
-            p[assets_dir.len..]
-        else
-            p;
-        const asset = std.meta.stringToEnum(Asset, asset_path) orelse return;
-
-        _ = try writer.writeAll(asset.content());
-
-        return;
-    }
 
     const file = root_dir.openFile(p, .{}) catch |err| {
         try writer.print("Failed to open {s}: {s}", .{

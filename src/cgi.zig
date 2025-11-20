@@ -5,9 +5,12 @@ const log = std.log;
 
 const core = @import("core");
 
+// 30 minutes
+const CACHE_AGE = 60 * 30;
+
 var stdout_buffer: [1024]u8 = undefined;
 
-const Ext = enum {
+const MimeType = enum {
     txt,
     md,
     map,
@@ -57,7 +60,7 @@ const Ext = enum {
     exe,
     msi,
 
-    pub fn contentType(self: Ext) []const u8 {
+    pub fn contentType(self: @This()) []const u8 {
         return switch (self) {
             .txt,
             .md,
@@ -73,11 +76,11 @@ const Ext = enum {
             .zig,
             .zon,
             .php,
-            => "text/plain",
+            => "text/plain; charset=utf-8",
 
-            .csv => "text/csv",
-            .html => "text/html",
-            .css => "text/css",
+            .csv => "text/csv; charset=utf-8",
+            .html => "text/html; charset=utf-8",
+            .css => "text/css; charset=utf-8",
             .pdf => "application/pdf",
 
             .png => "image/png",
@@ -112,6 +115,14 @@ const Ext = enum {
     }
 };
 
+fn get_mime(path: []const u8) MimeType {
+    const extension = std.fs.path.extension(path);
+    return if (extension.len > 1)
+        std.meta.stringToEnum(MimeType, std.fs.path.extension(path)[1..]) orelse .bin
+    else
+        .bin;
+}
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -129,14 +140,14 @@ pub fn main() !void {
     var root_dir = try core.getRoot();
     defer root_dir.close();
 
-    if (core.canServeFile(root_dir, sane_path)) {
-        const extension = std.fs.path.extension(sane_path);
-        const ext_type = if (extension.len > 1)
-            std.meta.stringToEnum(Ext, std.fs.path.extension(sane_path)[1..]) orelse .bin
-        else
-            .bin;
-
-        try writer.print("Content-Type: {s}; charset=utf-8\n\n", .{ext_type.contentType()});
+    if (core.isAsset(sane_path)) {
+        try writer.print("Content-Type: {s}\n", .{get_mime(sane_path).contentType()});
+        try writer.print("Cache-Control: max-age={}\n", .{CACHE_AGE});
+        try writer.writeAll("\n");
+        try core.serveAsset(writer, sane_path);
+    } else if (core.canServeFile(root_dir, sane_path)) {
+        try writer.print("Content-Type: {s}\n", .{get_mime(sane_path).contentType()});
+        try writer.writeAll("\n");
         try core.serveFile(root_dir, writer, sane_path);
     } else {
         try writer.writeAll("Content-Type: text/html; charset=utf-8\n\n");
