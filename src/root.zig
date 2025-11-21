@@ -99,7 +99,7 @@ pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void 
     };
     defer file.close();
 
-    var reader = file.reader(&.{});
+    var reader = file.readerStreaming(&.{});
     _ = try writer.sendFileAll(&reader, .unlimited);
 }
 
