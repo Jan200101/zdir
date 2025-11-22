@@ -11,6 +11,18 @@ allocator: Allocator,
 root_dir: Dir,
 path: []const u8,
 
+const SizeSuffix = enum {
+    B,
+    KB,
+    MB,
+    GB,
+    TB,
+    PB,
+    EB,
+    ZB,
+    YB,
+};
+
 pub fn init(allocator: Allocator, root_dir: Dir, path: []const u8) @This() {
     return .{
         .allocator = allocator,
@@ -85,7 +97,7 @@ pub fn format(self: @This(), writer: *Writer) !void {
     for (content_slice) |content| {
         defer self.allocator.free(content.name);
 
-        const suffix = if (content.kind == .directory)
+        const path_suffix = if (content.kind == .directory)
             "/"
         else
             "";
@@ -101,17 +113,39 @@ pub fn format(self: @This(), writer: *Writer) !void {
 
         try writer.print(
             \\<tr><td><a href="{f}">{f}{s}</a></td>
-        , .{ Escape.init(full_path), Escape.init(content.name), suffix });
+        , .{ Escape.init(full_path), Escape.init(content.name), path_suffix });
 
         try writer.print("<td>{s}</td>", .{@tagName(content.kind)});
         if (content.kind == .file) {
-            const size = blk: {
-                const stat = dir.statFile(content.name) catch break :blk 0;
+            const size, const suffix = blk: {
+                const stat = dir.statFile(content.name) catch break :blk .{ 0, .B };
 
-                break :blk stat.size;
+                var size: f32 = @floatFromInt(stat.size);
+                var suffix: SizeSuffix = .B;
+
+                while (size > 1000) {
+                    suffix = switch (suffix) {
+                        .B => .KB,
+                        .KB => .MB,
+                        .MB => .GB,
+                        .GB => .TB,
+                        .TB => .PB,
+                        .PB => .EB,
+                        .EB => .ZB,
+                        .ZB => .YB,
+                        .YB => break,
+                    };
+
+                    size /= 1000;
+                }
+
+                break :blk .{ size, suffix };
             };
 
-            try writer.print("<td>{}</td>", .{size});
+            if (suffix == .B)
+                try writer.print("<td>{d:.0} {s}</td>", .{ size, @tagName(suffix) })
+            else
+                try writer.print("<td>{d:.1} {s}</td>", .{ size, @tagName(suffix) });
         } else {
             try writer.writeAll("<td></td>");
         }
