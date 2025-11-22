@@ -1,3 +1,23 @@
+
+html {
+    color-scheme: light dark;
+    background-color: #ffffff;
+    color: #000000;
+
+    --main-border: #0F0F0F2F;
+    --top-border: #0F0F0F5F;
+}
+
+@media (prefers-color-scheme: dark) {
+    html {
+        background-color: #121212;
+        color: #e0e0e0;
+
+        --main-border: #F0F0F02F;
+        --top-border: #F0F0F05F;
+    }
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -5,6 +25,7 @@ body {
     font-family: sans-serif;
     font-size: 90%;
 
+    background-color: inherit;
 }
 
 a:link,
@@ -21,7 +42,7 @@ a:link:hover
 
 #top {
     display: flow;
-    border-bottom: 1px solid #0F0F0F5F;
+    border-bottom: 1px solid var(--top-border);
     padding: 2px 0.7em;
 
     font-size: 1.2em;
@@ -51,7 +72,7 @@ a:link:hover
 }
 
 #main td { /* table cells */
-    border-bottom: 1px solid #0F0F0F2F;
+    border-bottom: 1px solid var(--main-border);
     padding: 0px;
     border-collapse: collapse;
 }
