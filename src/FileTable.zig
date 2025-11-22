@@ -5,6 +5,8 @@ const Allocator = std.mem.Allocator;
 const Dir = std.fs.Dir;
 const Writer = std.Io.Writer;
 
+const Escape = @import("Escape.zig");
+
 allocator: Allocator,
 root_dir: Dir,
 path: []const u8,
@@ -98,8 +100,8 @@ pub fn format(self: @This(), writer: *Writer) !void {
         defer self.allocator.free(full_path);
 
         try writer.print(
-            \\<tr><td><a href="{s}">{s}{s}</a></td>
-        , .{ full_path, content.name, suffix });
+            \\<tr><td><a href="{f}">{f}{s}</a></td>
+        , .{ Escape.init(full_path), Escape.init(content.name), suffix });
 
         try writer.print("<td>{s}</td>", .{@tagName(content.kind)});
         if (content.kind == .file) {

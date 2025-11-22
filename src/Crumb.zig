@@ -4,6 +4,8 @@ const Writer = std.Io.Writer;
 const ComponentIterator = std.fs.path.ComponentIterator;
 const PosixComponentIterator = ComponentIterator(.posix, u8);
 
+const Escape = @import("Escape.zig");
+
 path: []const u8,
 
 pub fn init(path: []const u8) @This() {
@@ -20,7 +22,7 @@ pub fn format(self: @This(), writer: *Writer) !void {
     var iterator: PosixComponentIterator = try .init(self.path);
     while (iterator.next()) |content| {
         try writer.print(
-            \\<a class="crumb" href="{s}">{s}</a>
-        , .{ content.path, content.name });
+            \\<a class="crumb" href="{f}">{f}</a>
+        , .{ Escape.init(content.path), Escape.init(content.name) });
     }
 }
