@@ -7,6 +7,7 @@ const http = std.http;
 const core = @import("core");
 
 const MimeType = @import("Mime.zig").Type;
+const lockdown = @import("lockdown.zig");
 
 // 30 minutes
 const CACHE_AGE = 60 * 30;
@@ -14,6 +15,11 @@ const CACHE_AGE = 60 * 30;
 var stdout_buffer: [1024]u8 = undefined;
 
 pub fn main() !void {
+    var root_dir = try core.getRoot();
+    defer root_dir.close();
+
+    try lockdown.lockdown_dir(root_dir);
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -26,9 +32,6 @@ pub fn main() !void {
 
     const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", path });
     defer allocator.free(sane_path);
-
-    var root_dir = try core.getRoot();
-    defer root_dir.close();
 
     if (core.isAsset(sane_path)) {
         try writer.print("Content-Type: {s}\n", .{MimeType.fromPath(path).contentType()});

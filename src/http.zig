@@ -8,7 +8,14 @@ const Address = std.net.Address;
 
 const core = @import("core");
 
+const lockdown = @import("lockdown.zig");
+
 pub fn main() !void {
+    var root_dir = try core.getRoot();
+    defer root_dir.close();
+
+    try lockdown.lockdown_dir(root_dir);
+
     const addr = try Address.parseIp("127.0.0.1", core.config.http_port);
     var server = try Address.listen(addr, .{ .reuse_address = true });
     defer server.deinit();
@@ -40,13 +47,13 @@ pub fn main() !void {
             switch (request.upgradeRequested()) {
                 .other => |proto| log.err("Unsupported protocol {s}", .{proto}),
                 .websocket => |_| log.err("Websocket unsupported", .{}),
-                .none => handleRequest(&request) catch |err| log.err("failed to handle request: {s}", .{@errorName(err)}),
+                .none => handleRequest(&request, root_dir) catch |err| log.err("failed to handle request: {s}", .{@errorName(err)}),
             }
         }
     }
 }
 
-fn handleRequest(request: *HttpServer.Request) !void {
+fn handleRequest(request: *HttpServer.Request, root_dir: std.fs.Dir) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -73,9 +80,6 @@ fn handleRequest(request: *HttpServer.Request) !void {
 
     const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", resolved_path });
     defer allocator.free(sane_path);
-
-    var root_dir = try core.getRoot();
-    defer root_dir.close();
 
     if (core.isAsset(sane_path)) {
         try core.serveAsset(writer, sane_path);
