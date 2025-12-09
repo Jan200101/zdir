@@ -5,28 +5,57 @@ const posix = std.posix;
 const system = posix.system;
 const linux = std.os.linux;
 
-const LANDLOCK_CREATE_RULESET_VERSION = 1 << 0;
-const LANDLOCK_ACCESS_FS_READ_FILE = 1 << 2;
+const landlock_create_ruleset_flags = packed struct(u32) {
+    VERSION: bool = false,
+    ERRATA: bool = false,
+    reserved: u30 = 0,
+};
 
+const landlock_access_fs = packed struct(u64) {
+    EXECUTE: bool = false,
+    WRITE_FILE: bool = false,
+    READ_FILE: bool = false,
+    READ_DIR: bool = false,
+    REMOVE_DIR: bool = false,
+    REMOVE_FILE: bool = false,
+    MAKE_CHAR: bool = false,
+    MAKE_DIR: bool = false,
+    MAKE_REG: bool = false,
+    MAKE_SOCK: bool = false,
+    MAKE_FIFO: bool = false,
+    MAKE_BLOCK: bool = false,
+    MAKE_SYM: bool = false,
+    REFER: bool = false,
+    TRUNCATE: bool = false,
+    IOCTL_DEV: bool = false,
+    reserved: u48 = 0,
+};
+
+const landlock_rule_type = enum(u32) {
+    NONE,
+    PATH_BENEATH = 1,
+    RULE_NET_PORT,
+};
 const LANDLOCK_RULE_PATH_BENEATH = 1;
 
 const landlock_ruleset_attr = extern struct {
-    handled_access_fs: u64 = 0,
+    handled_access_fs: landlock_access_fs = .{},
     handled_access_net: u64 = 0,
     scoped: u64 = 0,
 };
 
 const landlock_path_beneath_attr = extern struct {
-    allowed_access: u64 = 0,
+    allowed_access: landlock_access_fs = .{},
     parent_fd: i32 = 0,
 };
 
 fn landlock_create_ruleset(
     attr: ?*const landlock_ruleset_attr,
     size: usize,
-    flags: u32,
+    flags: landlock_create_ruleset_flags,
 ) !posix.fd_t {
-    const rc = linux.syscall3(.landlock_create_ruleset, @intFromPtr(attr), size, flags);
+    const bitflags: u32 = @bitCast(flags);
+    const rc = linux.syscall3(.landlock_create_ruleset, @intFromPtr(attr), size, bitflags);
     switch (posix.errno(rc)) {
         .SUCCESS => return @intCast(rc),
         .OPNOTSUPP => return error.UnsupportedFeature,
@@ -40,11 +69,11 @@ fn landlock_create_ruleset(
 
 fn landlock_add_rule(
     ruleset_fd: posix.fd_t,
-    rule_type: c_uint,
+    rule_type: landlock_rule_type,
     rule_attr: *const anyopaque,
     flags: u32,
 ) !void {
-    const rc = linux.syscall4(.landlock_add_rule, @bitCast(@as(isize, ruleset_fd)), rule_type, @intFromPtr(rule_attr), flags);
+    const rc = linux.syscall4(.landlock_add_rule, @bitCast(@as(isize, ruleset_fd)), @intFromEnum(rule_type), @intFromPtr(rule_attr), flags);
     switch (posix.errno(rc)) {
         .SUCCESS => return {},
         else => |err| return posix.unexpectedErrno(err),
@@ -68,20 +97,35 @@ fn landlock_restrict_self(
 }
 
 pub fn lockdown_dir(dir: std.fs.Dir) !void {
+    const access: landlock_access_fs = .{
+        .EXECUTE = true,
+        .WRITE_FILE = true,
+        .READ_FILE = true,
+        .READ_DIR = true,
+        .REMOVE_DIR = true,
+        .REMOVE_FILE = true,
+        .MAKE_CHAR = true,
+        .MAKE_DIR = true,
+        .MAKE_REG = true,
+        .MAKE_SOCK = true,
+        .MAKE_FIFO = true,
+        .MAKE_BLOCK = true,
+        .MAKE_SYM = true,
+    };
 
-    _ = try landlock_create_ruleset(null, 0, LANDLOCK_CREATE_RULESET_VERSION);
+    _ = try landlock_create_ruleset(null, 0, .{ .VERSION = true });
 
     var ruleset: landlock_ruleset_attr = .{
-        .handled_access_fs = LANDLOCK_ACCESS_FS_READ_FILE,
+        .handled_access_fs = access,
     };
-    const ruleset_fd = try landlock_create_ruleset(&ruleset, @sizeOf(landlock_ruleset_attr), 0);
+    const ruleset_fd = try landlock_create_ruleset(&ruleset, @sizeOf(landlock_ruleset_attr), .{});
     defer posix.close(ruleset_fd);
 
     var path_rule: landlock_path_beneath_attr = .{
-        .allowed_access = LANDLOCK_ACCESS_FS_READ_FILE,
+        .allowed_access = access,
         .parent_fd = dir.fd,
     };
-    try landlock_add_rule(ruleset_fd, LANDLOCK_RULE_PATH_BENEATH, &path_rule, 0);
+    try landlock_add_rule(ruleset_fd, .PATH_BENEATH, &path_rule, 0);
 
     _ = try posix.prctl(.SET_NO_NEW_PRIVS, .{ 1, 0, 0, 0 });
     try landlock_restrict_self(ruleset_fd, 0);
