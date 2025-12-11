@@ -1,8 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const native_arch = builtin.cpu.arch;
 const posix = std.posix;
-const system = posix.system;
 const linux = std.os.linux;
 
 const landlock_create_ruleset_flags = packed struct(u32) {
@@ -143,6 +141,10 @@ fn landlock_restrict_self(
 }
 
 pub fn lockdown_dir(dir: std.fs.Dir) !void {
+    // for lockdown to work we need to request no new privs
+    // this prevents any priviledge escalation incase of an exploit
+    _ = try posix.prctl(.SET_NO_NEW_PRIVS, .{ 1, 0, 0, 0 });
+
     const fs_access: landlock_access_fs = try .all();
 
     var ruleset: landlock_ruleset_attr = .{
@@ -160,6 +162,5 @@ pub fn lockdown_dir(dir: std.fs.Dir) !void {
     };
     try landlock_add_rule(ruleset_fd, .PATH_BENEATH, &path_rule, 0);
 
-    _ = try posix.prctl(.SET_NO_NEW_PRIVS, .{ 1, 0, 0, 0 });
     try landlock_restrict_self(ruleset_fd, 0);
 }
