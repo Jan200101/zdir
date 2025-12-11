@@ -5,10 +5,12 @@ const log = std.log;
 
 const core = @import("core");
 const landlock = @import("lockdown/landlock.zig");
+const capsicum = @import("lockdown/capsicum.zig");
 
 const lockdown_impls = enum {
     none,
     landlock,
+    capsicum,
 };
 
 pub fn lockdown_dir(dir: std.fs.Dir) !void {
@@ -17,6 +19,7 @@ pub fn lockdown_dir(dir: std.fs.Dir) !void {
 
     const impl = switch (native_os) {
         .linux => .landlock,
+        .freebsd => .capsicum,
         else => .none,
     };
 
@@ -24,7 +27,7 @@ pub fn lockdown_dir(dir: std.fs.Dir) !void {
 
     switch (impl) {
         .landlock => try landlock.lockdown_dir(dir),
-        .none => {},
+        .capsicum => try capsicum.lockdown_dir(dir),
         else => {},
     }
 }

@@ -8,6 +8,12 @@ pub fn build(b: *std.Build) void {
     const http_port = b.option(u32, "port", "HTTP Port") orelse 8888;
     const enable_lockdown = b.option(bool, "enable-lockdown", "lock down access to only the root directory") orelse true;
 
+    // FreeBSD has no system layer yet
+    const link_libc = if (enable_lockdown and target.result.os.tag == .freebsd)
+        true
+    else
+        false;
+
     const options = b.addOptions();
     options.addOption([]const u8, "root_path", root_path);
     options.addOption(u32, "http_port", http_port);
@@ -34,6 +40,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "core", .module = mod },
             },
+            .link_libc = link_libc,
         }),
     });
     b.installArtifact(http_exe);
@@ -47,6 +54,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "core", .module = mod },
             },
+            .link_libc = link_libc,
         }),
     });
     b.installArtifact(cgi_exe);
