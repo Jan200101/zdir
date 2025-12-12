@@ -14,11 +14,11 @@ pub fn main() !void {
     var root_dir = try core.getRoot();
     defer root_dir.close();
 
-    try lockdown.lockdown_dir(root_dir);
-
-    const addr = try Address.parseIp("127.0.0.1", core.config.http_port);
+    const addr = try Address.parseIp("0.0.0.0", core.config.http_port);
     var server = try Address.listen(addr, .{ .reuse_address = true });
     defer server.deinit();
+
+    try lockdown.lockdown_dir(root_dir);
 
     log.info("Starting HTTP server at http://{f}", .{addr});
 
