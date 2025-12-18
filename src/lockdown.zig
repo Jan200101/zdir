@@ -13,7 +13,18 @@ const lockdown_impls = enum {
     capsicum,
 };
 
-pub fn lockdown_dir(dir: std.fs.Dir) !void {
+pub fn lockdown_dir(dir: std.fs.Dir) void {
+    lockdown_dir_wrap(dir) catch |err| {
+        log.err("Failed to initialize lockdown: {s}", .{@errorName(err)});
+
+        if (core.config.force_lockdown) {
+            @branchHint(.unlikely);
+            @panic("Lockdown required but could not be initialized");
+        }
+    };
+}
+
+fn lockdown_dir_wrap(dir: std.fs.Dir) !void {
     if (!core.config.enable_lockdown)
         return;
 

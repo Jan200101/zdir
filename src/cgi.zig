@@ -18,7 +18,7 @@ pub fn main() !void {
     var root_dir = try core.getRoot();
     defer root_dir.close();
 
-    try lockdown.lockdown_dir(root_dir);
+    lockdown.lockdown_dir(root_dir);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();

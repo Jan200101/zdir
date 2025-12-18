@@ -107,6 +107,7 @@ fn landlock_create_ruleset(
         .@"2BIG" => return error.TooBig,
         .FAULT => @panic("invalid API usage"),
         .NOMSG => unreachable,
+        .NOSYS => return error.SystemOutdated,
         else => |err| return posix.unexpectedErrno(err),
     }
 }

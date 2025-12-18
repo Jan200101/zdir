@@ -18,7 +18,7 @@ pub fn main() !void {
     var server = try Address.listen(addr, .{ .reuse_address = true });
     defer server.deinit();
 
-    try lockdown.lockdown_dir(root_dir);
+    lockdown.lockdown_dir(root_dir);
 
     log.info("Starting HTTP server at http://{f}", .{addr});
 

@@ -7,6 +7,7 @@ pub fn build(b: *std.Build) void {
     const root_path = b.option([]const u8, "root", "root") orelse ".";
     const http_port = b.option(u32, "port", "HTTP Port") orelse 8888;
     const enable_lockdown = b.option(bool, "enable-lockdown", "lock down access to only the root directory") orelse true;
+    const force_lockdown = b.option(bool, "force-lockdown", "terminate the program is lockdown cannot be initialized") orelse false;
 
     // FreeBSD has no system layer yet
     const link_libc = if (enable_lockdown and target.result.os.tag == .freebsd)
@@ -18,6 +19,7 @@ pub fn build(b: *std.Build) void {
     options.addOption([]const u8, "root_path", root_path);
     options.addOption(u32, "http_port", http_port);
     options.addOption(bool, "enable_lockdown", enable_lockdown);
+    options.addOption(bool, "force_lockdown", force_lockdown);
 
     const mod = b.addModule("core", .{
         .root_source_file = b.path("src/root.zig"),
