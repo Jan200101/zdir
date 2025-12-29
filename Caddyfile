@@ -1,0 +1,7 @@
+
+:8888 {
+    log
+    reverse_proxy unix//tmp/zdir.sock {
+        transport fastcgi
+    }
+}

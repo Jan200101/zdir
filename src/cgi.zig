@@ -34,12 +34,12 @@ pub fn main() !void {
     defer allocator.free(sane_path);
 
     if (core.isAsset(sane_path)) {
-        try writer.print("Content-Type: {s}\n", .{MimeType.fromPath(path).contentType()});
+        try writer.print("Content-Type: {s}\n", .{MimeType.fromPath(sane_path).contentType()});
         try writer.print("Cache-Control: max-age={}\n", .{CACHE_AGE});
         try writer.writeAll("\n");
         try core.serveAsset(writer, sane_path);
     } else if (core.canServeFile(root_dir, sane_path)) {
-        try writer.print("Content-Type: {s}\n", .{MimeType.fromPath(path).contentType()});
+        try writer.print("Content-Type: {s}\n", .{MimeType.fromPath(sane_path).contentType()});
         try writer.writeAll("\n");
         try core.serveFile(root_dir, writer, sane_path);
     } else {
