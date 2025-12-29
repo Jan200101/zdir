@@ -23,7 +23,7 @@ pub fn main() !void {
     log.info("Starting HTTP server at http://{f}", .{addr});
 
     var recv_buffer: [1024]u8 = undefined;
-    var send_buffer: [100]u8 = undefined;
+    var send_buffer: [2048]u8 = undefined;
 
     accept: while (true) {
         const connection = try server.accept();

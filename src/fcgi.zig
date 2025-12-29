@@ -230,7 +230,7 @@ pub fn main() !void {
     log.info("Starting FastCGI session at {s}", .{socket_path});
 
     var recv_buffer: [1024]u8 = undefined;
-    var send_buffer: [100]u8 = undefined;
+    var send_buffer: [2048]u8 = undefined;
 
     while (true) {
         const connection = try server.accept();
