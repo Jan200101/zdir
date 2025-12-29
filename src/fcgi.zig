@@ -299,17 +299,17 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                 }
             } else {
                 params_done = true;
-                log.debug("PARAMS complete", .{});
+                log.info("received parameters path={?s}", .{path});
             },
             .STDIN => if (request.header.content_length == 0) {
                 stdin_done = true;
-                log.debug("STDIN complete", .{});
+                log.info("received stdin", .{});
             },
             else => {},
         }
 
         if (params_done and stdin_done) {
-            log.info("Request fully received, sending response", .{});
+            log.info("sending response", .{});
 
             // Streaming (incomplete)
             {
