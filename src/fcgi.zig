@@ -128,6 +128,9 @@ const FastCgiServer = struct {
     in: *Reader,
     out: *Writer,
 
+    const RequestError = Reader.ReadAllocError;
+    const ResponseError = Writer.Error;
+
     pub fn init(in: *Reader, out: *Writer) @This() {
         return .{
             .in = in,
@@ -135,7 +138,7 @@ const FastCgiServer = struct {
         };
     }
 
-    pub fn readRequest(self: *@This(), allocator: Allocator) !fcgi_request {
+    pub fn readRequest(self: *@This(), allocator: Allocator) RequestError!fcgi_request {
         var header: fcgi_header = undefined;
         try self.in.readSliceAll(@ptrCast(&header));
         if (native_endian != .big) {
@@ -159,11 +162,11 @@ const FastCgiServer = struct {
         };
     }
 
-    pub fn endRequest(self: *@This(), request_id: u16, end_body: fcgi_end_body) !void {
+    pub fn endRequest(self: *@This(), request_id: u16, end_body: fcgi_end_body) ResponseError!void {
         try self.respond(.END_REQUEST, request_id, @ptrCast(&end_body));
     }
 
-    pub fn respond(self: *@This(), ftype: fcgi_type, request_id: u16, bytes: []const u8) !void {
+    pub fn respond(self: *@This(), ftype: fcgi_type, request_id: u16, bytes: []const u8) ResponseError!void {
         const net_request_id = if (native_endian != .big)
             @byteSwap(request_id)
         else
@@ -204,7 +207,7 @@ const FastCgiServer = struct {
         try self.out.flush();
     }
 
-    pub fn respondEmpty(self: *@This(), ftype: fcgi_type, request_id: u16) !void {
+    pub fn respondEmpty(self: *@This(), ftype: fcgi_type, request_id: u16) ResponseError!void {
         const net_request_id = if (native_endian != .big)
             @byteSwap(request_id)
         else
