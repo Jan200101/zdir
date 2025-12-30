@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const File = std.fs.File;
 const native_endian = builtin.target.cpu.arch.endian();
 const assert = std.debug.assert;
+const maxInt = std.math.maxInt;
 const core = @import("core");
 
 const MimeType = @import("Mime.zig").Type;
@@ -89,7 +90,7 @@ const BodyWriter = struct {
         const buffer = w.buffered();
         if (buffer.len > 0) {
             try bw.server.respond(bw.type, bw.request_id, buffer);
-            len += w.consume(buffer.len);
+            _ = w.consume(buffer.len);
         }
 
         for (data[0 .. data.len - 1]) |d| {
@@ -118,7 +119,7 @@ const BodyWriter = struct {
     }
 
     pub fn end(bw: *BodyWriter) !void {
-        try bw.server.respond(bw.type, bw.request_id, &.{});
+        try bw.server.respondEmpty(bw.type, bw.request_id);
         try bw.writer.flush();
     }
 };
@@ -158,34 +159,69 @@ const FastCgiServer = struct {
         };
     }
 
+    pub fn endRequest(self: *@This(), request_id: u16, end_body: fcgi_end_body) !void {
+        try self.respond(.END_REQUEST, request_id, @ptrCast(&end_body));
+    }
+
     pub fn respond(self: *@This(), ftype: fcgi_type, request_id: u16, bytes: []const u8) !void {
         const net_request_id = if (native_endian != .big)
             @byteSwap(request_id)
         else
             request_id;
 
-        const net_content_length: u16 =
-            if (native_endian != .big)
-                @byteSwap(@as(u16, @intCast(bytes.len)))
-            else
-                @intCast(bytes.len);
+        if (bytes.len == 0)
+            return;
+
+        var i: usize = 0;
+        while (i < bytes.len) {
+            const end = @min(i + maxInt(u16), bytes.len);
+            defer i = end;
+            const chunk = bytes[i..end];
+            assert(chunk.len > 0);
+
+            const net_content_length: u16 =
+                if (native_endian != .big)
+                    @byteSwap(@as(u16, @intCast(chunk.len)))
+                else
+                    @intCast(chunk.len);
+
+            var header: fcgi_header = .{
+                .version = .VERSION_1,
+                .type = ftype,
+                .request_id = net_request_id,
+                .content_length = net_content_length,
+                .padding_length = 0,
+                .reserved = 0,
+            };
+
+            log.debug("send {s} request {}", .{ @tagName(ftype), request_id });
+
+            try self.out.writeAll(@ptrCast(&header));
+
+            if (chunk.len > 0)
+                try self.out.writeAll(chunk);
+        }
+        try self.out.flush();
+    }
+
+    pub fn respondEmpty(self: *@This(), ftype: fcgi_type, request_id: u16) !void {
+        const net_request_id = if (native_endian != .big)
+            @byteSwap(request_id)
+        else
+            request_id;
 
         var header: fcgi_header = .{
             .version = .VERSION_1,
             .type = ftype,
             .request_id = net_request_id,
-            .content_length = net_content_length,
+            .content_length = 0,
             .padding_length = 0,
             .reserved = 0,
         };
 
-        log.debug("send {s} request {}", .{ @tagName(ftype), request_id });
+        log.debug("completed {s} request {}", .{ @tagName(ftype), request_id });
 
         try self.out.writeAll(@ptrCast(&header));
-
-        if (bytes.len > 0)
-            try self.out.writeAll(bytes);
-
         try self.out.flush();
     }
 
@@ -202,10 +238,6 @@ const FastCgiServer = struct {
                 },
             },
         };
-    }
-
-    pub fn completeRequest(self: *@This(), request_id: u16, end_body: fcgi_end_body) !void {
-        try self.respond(.END_REQUEST, request_id, @ptrCast(&end_body));
     }
 };
 
@@ -311,7 +343,6 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
         if (params_done and stdin_done) {
             log.info("sending response", .{});
 
-            // Streaming (incomplete)
             {
                 var response_buffer: [1024]u8 = undefined;
                 var response = server.respondStreaming(&response_buffer, .STDOUT, request.header.request_id);
@@ -337,7 +368,7 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                 }
             }
 
-            try server.completeRequest(request.header.request_id, .{
+            try server.endRequest(request.header.request_id, .{
                 .app_status = 0,
                 .protocol_status = .REQUEST_COMPLETE,
             });

@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) void {
     const http_port = b.option(u32, "port", "HTTP Port") orelse 8888;
     const enable_lockdown = b.option(bool, "enable-lockdown", "lock down access to only the root directory") orelse true;
     const force_lockdown = b.option(bool, "force-lockdown", "terminate the program is lockdown cannot be initialized") orelse false;
-    const fcgi_socket_path = b.option([]const u8, "fcgi-socket-path", "path to the unix socket used by the FastCGI program") orelse "/run/zdir.sock";
+    const fcgi_socket_path = b.option([]const u8, "fcgi-socket-path", "path to the unix socket used by the FastCGI program") orelse "/tmp/zdir.sock";
 
     // FreeBSD has no system layer yet
     const link_libc = if (enable_lockdown and target.result.os.tag == .freebsd)
