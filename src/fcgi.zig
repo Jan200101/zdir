@@ -139,13 +139,7 @@ const FastCgiServer = struct {
     }
 
     pub fn readRequest(self: *@This(), allocator: Allocator) RequestError!fcgi_request {
-        var header: fcgi_header = undefined;
-        try self.in.readSliceAll(@ptrCast(&header));
-        if (native_endian != .big) {
-            header.request_id = @byteSwap(header.request_id);
-            header.content_length = @byteSwap(header.content_length);
-        }
-
+        const header = try self.in.takeStruct(fcgi_header, .big);
         const body = if (header.content_length > 0)
             try self.in.readAlloc(allocator, header.content_length)
         else
@@ -167,11 +161,6 @@ const FastCgiServer = struct {
     }
 
     pub fn respond(self: *@This(), ftype: fcgi_type, request_id: u16, bytes: []const u8) ResponseError!void {
-        const net_request_id = if (native_endian != .big)
-            @byteSwap(request_id)
-        else
-            request_id;
-
         if (bytes.len == 0)
             return;
 
@@ -182,24 +171,18 @@ const FastCgiServer = struct {
             const chunk = bytes[i..end];
             assert(chunk.len > 0);
 
-            const net_content_length: u16 =
-                if (native_endian != .big)
-                    @byteSwap(@as(u16, @intCast(chunk.len)))
-                else
-                    @intCast(chunk.len);
-
-            var header: fcgi_header = .{
+            const header: fcgi_header = .{
                 .version = .VERSION_1,
                 .type = ftype,
-                .request_id = net_request_id,
-                .content_length = net_content_length,
+                .request_id = request_id,
+                .content_length = @intCast(chunk.len),
                 .padding_length = 0,
                 .reserved = 0,
             };
 
             log.debug("send {s} request {}", .{ @tagName(ftype), request_id });
 
-            try self.out.writeAll(@ptrCast(&header));
+            try self.out.writeStruct(header, .big);
 
             if (chunk.len > 0)
                 try self.out.writeAll(chunk);
@@ -208,15 +191,10 @@ const FastCgiServer = struct {
     }
 
     pub fn respondEmpty(self: *@This(), ftype: fcgi_type, request_id: u16) ResponseError!void {
-        const net_request_id = if (native_endian != .big)
-            @byteSwap(request_id)
-        else
-            request_id;
-
-        var header: fcgi_header = .{
+        const header: fcgi_header = .{
             .version = .VERSION_1,
             .type = ftype,
-            .request_id = net_request_id,
+            .request_id = request_id,
             .content_length = 0,
             .padding_length = 0,
             .reserved = 0,
@@ -224,7 +202,7 @@ const FastCgiServer = struct {
 
         log.debug("completed {s} request {}", .{ @tagName(ftype), request_id });
 
-        try self.out.writeAll(@ptrCast(&header));
+        try self.out.writeStruct(header, .big);
         try self.out.flush();
     }
 
@@ -309,11 +287,8 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
 
                         if ((byte >> 7) == 1) {
                             // 4 bytes long
-                            const bytes = try params_reader.take(4);
-                            const sizep: *u32 = @ptrCast(@alignCast(bytes.ptr));
-                            if (native_endian != .big)
-                                sizep.* = @byteSwap(sizep.*);
-                            len.* = sizep.*;
+                            const big_size = try params_reader.takeInt(u32, .big);
+                            len.* = big_size;
                         } else {
                             // 1 byte long
                             len.* = byte;
