@@ -47,7 +47,11 @@ pub fn main() !void {
             switch (request.upgradeRequested()) {
                 .other => |proto| log.err("Unsupported protocol {s}", .{proto}),
                 .websocket => |_| log.err("Websocket unsupported", .{}),
-                .none => handleRequest(&request, root_dir) catch |err| log.err("failed to handle request: {s}", .{@errorName(err)}),
+                .none => handleRequest(&request, root_dir) catch |err| {
+                    log.err("failed to handle request: {s}", .{@errorName(err)});
+                    if (builtin.mode == .Debug)
+                        std.debug.dumpStackTrace(@errorReturnTrace().?.*);
+                },
             }
         }
     }

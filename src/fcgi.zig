@@ -255,7 +255,11 @@ pub fn main() !void {
         var connection_bw = connection.stream.writer(&send_buffer);
 
         var fastcgi_server: FastCgiServer = .init(connection_br.interface(), &connection_bw.interface);
-        processRequests(root_dir, &fastcgi_server) catch |err| log.err("failed to handle request: {s}", .{@errorName(err)});
+        processRequests(root_dir, &fastcgi_server) catch |err| {
+            log.err("failed to handle request: {s}", .{@errorName(err)});
+            if (builtin.mode == .Debug)
+                std.debug.dumpStackTrace(@errorReturnTrace().?.*);
+        };
     }
 }
 
@@ -351,6 +355,7 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                 .protocol_status = .REQUEST_COMPLETE,
             });
 
+            // TODO handle multiplexing
             return;
         }
     }
