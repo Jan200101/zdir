@@ -4,12 +4,13 @@ const builtin = @import("builtin");
 const log = std.log;
 const posix = std.posix;
 const net = std.net;
+const mem = std.mem;
 const Address = net.Address;
 const Server = net.Server;
 const Io = std.Io;
 const Reader = Io.Reader;
 const Writer = Io.Writer;
-const Allocator = std.mem.Allocator;
+const Allocator = mem.Allocator;
 const File = std.fs.File;
 const Limit = Io.Limit;
 const native_endian = builtin.target.cpu.arch.endian();
@@ -23,6 +24,11 @@ const lockdown = @import("lockdown.zig");
 // 30 minutes
 const CACHE_AGE = 60 * 30;
 const MAX_REQUESTS = 10;
+
+const is_debug = switch (builtin.mode) {
+    .Debug, .ReleaseSafe => true,
+    .ReleaseFast, .ReleaseSmall => false,
+};
 
 const fcgi_version = enum(u8) {
     VERSION_1 = 1,
@@ -53,6 +59,17 @@ const fcgi_protocol_status = enum(u8) {
     UNKNOWN_ROLE = 3,
 };
 
+const fcgi_role = enum(u16) {
+    RESPONDER = 1,
+    AUTHORIZER = 2,
+    FILTER = 3,
+};
+
+const fcgi_flags = packed struct(u8) {
+    KEEP_CONN: bool,
+    reserved: u7,
+};
+
 const fcgi_header = extern struct {
     version: fcgi_version,
     type: fcgi_type,
@@ -68,13 +85,26 @@ const fcgi_end_body = extern struct {
     reserve: [3]u8 = .{ 0, 0, 0 },
 };
 
+const fcgi_begin_body = extern struct {
+    role: fcgi_role,
+    flags: fcgi_flags,
+    reserved: [5]u8,
+};
+
 const fcgi_request = struct {
     header: fcgi_header,
-    body: ?[]u8,
+    bytes: ?[]u8,
 
     pub fn deinit(self: *@This(), allocator: Allocator) void {
-        if (self.body) |body|
-            allocator.free(body);
+        if (self.bytes) |bytes|
+            allocator.free(bytes);
+    }
+
+    pub inline fn bytesToValue(self: *@This(), comptime T: type) T {
+        assert(self.bytes != null);
+        var V: T = mem.bytesToValue(T, self.bytes.?);
+        if (native_endian != .big) std.mem.byteSwapAllFields(T, &V);
+        return V;
     }
 };
 
@@ -150,7 +180,7 @@ const FastCgiServer = struct {
 
     pub fn readRequest(self: *@This(), allocator: Allocator) RequestError!fcgi_request {
         const header = try self.in.takeStruct(fcgi_header, .big);
-        const body = if (header.content_length > 0)
+        const bytes = if (header.content_length > 0)
             try self.in.readAlloc(allocator, header.content_length)
         else
             null;
@@ -162,7 +192,7 @@ const FastCgiServer = struct {
 
         return .{
             .header = header,
-            .body = body,
+            .bytes = bytes,
         };
     }
 
@@ -225,7 +255,13 @@ const FastCgiServer = struct {
     }
 };
 
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+
 pub fn main() !void {
+    defer if (is_debug) {
+        _ = debug_allocator.deinit();
+    };
+
     var root_dir = try core.getRoot();
     defer root_dir.close();
 
@@ -267,9 +303,19 @@ pub fn main() !void {
 }
 
 fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const base_allocator = gpa: {
+        if (builtin.target.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
+        break :gpa if (is_debug) debug_allocator.allocator() else std.heap.page_allocator;
+    };
+    defer if (is_debug) {
+        _ = debug_allocator.detectLeaks();
+    };
+
+    var arena = std.heap.ArenaAllocator.init(base_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
+
+    var keep_connection: bool = true;
 
     var request_states: [MAX_REQUESTS]fcgi_request_state = undefined;
     defer for (&request_states) |*state| state.deinit(allocator);
@@ -283,19 +329,38 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
         const state = &request_states[request_id];
 
         switch (request.header.type) {
+            .BEGIN_REQUEST => {
+                if (request.bytes) |_| {
+                    log.info("begin request {}", .{request_id});
+
+                    const request_begin_body = request.bytesToValue(fcgi_begin_body);
+                    keep_connection = request_begin_body.flags.KEEP_CONN;
+                    if (request_begin_body.role != .RESPONDER) {
+                        log.err("received invalid role expected: {s}, got: {s}", .{ @tagName(fcgi_role.RESPONDER), @tagName(request_begin_body.role) });
+
+                        try server.endRequest(request_id, .{
+                            .app_status = 0,
+                            .protocol_status = .REQUEST_COMPLETE,
+                        });
+
+                        return;
+                    }
+                } else {
+                    log.err("received {s} without body", .{@tagName(request.header.type)});
+                }
+            },
             .ABORT_REQUEST => {
-                log.debug("request {} aborted", .{request_id});
+                log.debug("aborting request {}", .{request_id});
                 try server.endRequest(request_id, .{
                     .app_status = 0,
-                    .protocol_status = .REQUEST_COMPLETE,
+                    .protocol_status = .UNKNOWN_ROLE,
                 });
 
                 state.reset(allocator);
-
                 continue;
             },
-            .PARAMS => if (request.body) |body| {
-                var params_reader = Reader.fixed(body);
+            .PARAMS => if (request.bytes) |bytes| {
+                var params_reader = Reader.fixed(bytes);
                 var lens: [2]u32 = undefined;
                 read_params: while (true) {
                     for (&lens) |*len| {
@@ -334,12 +399,12 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                 state.stdin_done = true;
                 log.info("received stdin for {}", .{request_id});
             },
-            else => {},
+            else => {
+                log.err("Unknown request type {s}", .{@tagName(request.header.type)});
+            },
         }
 
         if (state.receiveComplete()) {
-            log.info("sending response", .{});
-
             {
                 var response_buffer: [1024]u8 = undefined;
                 var response = server.respondStreaming(&response_buffer, .STDOUT, request_id);
@@ -365,6 +430,7 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                 }
             }
 
+            log.info("ending request {}", .{request_id});
             try server.endRequest(request_id, .{
                 .app_status = 0,
                 .protocol_status = .REQUEST_COMPLETE,
@@ -373,8 +439,10 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
             state.reset(allocator);
             log.debug("reset request state {}", .{request_id});
 
-            // TODO handle multiplexing
-            return;
+            if (!keep_connection) {
+                log.info("closing connection at request of client", .{});
+                return;
+            }
         }
     }
 }
