@@ -131,14 +131,6 @@ const BodyWriter = struct {
         return len;
     }
 
-    pub fn sendFile(w: *Writer, file_reader: *File.Reader, limit: std.Io.Limit) Writer.FileError!usize {
-        const bw: *BodyWriter = @alignCast(@fieldParentPtr("writer", w));
-        _ = bw;
-        _ = file_reader;
-        _ = limit;
-        return 0;
-    }
-
     pub fn end(bw: *BodyWriter) !void {
         try bw.server.respondEmpty(bw.type, bw.request_id);
         try bw.writer.flush();
@@ -192,19 +184,9 @@ const FastCgiServer = struct {
             const chunk = bytes[i..end];
             assert(chunk.len > 0);
 
-            const header: fcgi_header = .{
-                .version = .VERSION_1,
-                .type = ftype,
-                .request_id = request_id,
-                .content_length = @intCast(chunk.len),
-                .padding_length = 0,
-                .reserved = 0,
-            };
-
             log.debug("send {s} request {}", .{ @tagName(ftype), request_id });
 
-            try self.out.writeStruct(header, .big);
-
+            try self.respondHeader(ftype, request_id, @intCast(chunk.len));
             if (chunk.len > 0)
                 try self.out.writeAll(chunk);
         }
@@ -212,19 +194,22 @@ const FastCgiServer = struct {
     }
 
     pub fn respondEmpty(self: *@This(), ftype: fcgi_type, request_id: u16) ResponseError!void {
+        log.debug("completed {s} request {}", .{ @tagName(ftype), request_id });
+        try self.respondHeader(ftype, request_id, 0);
+        try self.out.flush();
+    }
+
+    pub fn respondHeader(self: *@This(), ftype: fcgi_type, request_id: u16, content_length: u16) ResponseError!void {
         const header: fcgi_header = .{
             .version = .VERSION_1,
             .type = ftype,
             .request_id = request_id,
-            .content_length = 0,
+            .content_length = content_length,
             .padding_length = 0,
             .reserved = 0,
         };
 
-        log.debug("completed {s} request {}", .{ @tagName(ftype), request_id });
-
         try self.out.writeStruct(header, .big);
-        try self.out.flush();
     }
 
     pub fn respondStreaming(self: *@This(), buffer: []u8, ftype: fcgi_type, request_id: u16) BodyWriter {
@@ -301,7 +286,17 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
         const state = &request_states[request_id];
 
         switch (request.header.type) {
-            .ABORT_REQUEST => return,
+            .ABORT_REQUEST => {
+                log.debug("request {} aborted", .{request_id});
+                try server.endRequest(request_id, .{
+                    .app_status = 0,
+                    .protocol_status = .REQUEST_COMPLETE,
+                });
+
+                state.reset(allocator);
+
+                continue;
+            },
             .PARAMS => if (request.body) |body| {
                 var params_reader = Reader.fixed(body);
                 var lens: [2]u32 = undefined;
