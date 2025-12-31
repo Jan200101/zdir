@@ -11,6 +11,7 @@ const Reader = Io.Reader;
 const Writer = Io.Writer;
 const Allocator = std.mem.Allocator;
 const File = std.fs.File;
+const Limit = Io.Limit;
 const native_endian = builtin.target.cpu.arch.endian();
 const assert = std.debug.assert;
 const maxInt = std.math.maxInt;
@@ -104,31 +105,27 @@ const BodyWriter = struct {
     request_id: u16,
 
     pub fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
-        if (data.len == 0) return 0;
         const bw: *BodyWriter = @alignCast(@fieldParentPtr("writer", w));
-        var len: usize = 0;
+        const data_len = w.end + Writer.countSplat(data, splat);
+        const data_limit: Limit = .limited(@min(data_len, maxInt(u16)));
 
-        const buffer = w.buffered();
-        if (buffer.len > 0) {
-            try bw.server.respond(bw.type, bw.request_id, buffer);
-            _ = w.consume(buffer.len);
-        }
+        try bw.server.respondHeader(bw.type, bw.request_id, @intCast(data_limit.toInt() orelse unreachable));
+        const n = try bw.server.out.writeSplatHeaderLimit(w.buffered(), data, splat, data_limit);
+        return w.consume(n);
+    }
 
-        for (data[0 .. data.len - 1]) |d| {
-            if (d.len == 0) continue;
-            try bw.server.respond(bw.type, bw.request_id, d);
-            len += d.len;
-        }
+    pub fn sendFile(w: *Writer, file_reader: *File.Reader, limit: Limit) Writer.FileError!usize {
+        const bw: *BodyWriter = @alignCast(@fieldParentPtr("writer", w));
+        const data_len = Writer.countSendFileLowerBound(w.end, file_reader, limit) orelse return error.Unimplemented;
+        const data_limit: Limit = .limited(@min(data_len, maxInt(u16)));
 
-        const pattern = data[data.len - 1];
-        if (pattern.len > 0) {
-            for (0..splat) |_| {
-                try bw.server.respond(bw.type, bw.request_id, pattern);
-                len += pattern.len;
-            }
-        }
+        try bw.server.respondHeader(bw.type, bw.request_id, @intCast(data_limit.toInt() orelse unreachable));
+        const n = if (data_limit.subtract(w.buffered().len)) |sendfile_limit|
+            try bw.server.out.sendFileHeader(w.buffered(), file_reader, sendfile_limit.min(limit))
+        else
+            try bw.server.out.write(data_limit.slice(w.buffered()));
 
-        return len;
+        return w.consume(n);
     }
 
     pub fn end(bw: *BodyWriter) !void {
@@ -221,7 +218,7 @@ const FastCgiServer = struct {
                 .buffer = buffer,
                 .vtable = &.{
                     .drain = BodyWriter.drain,
-                    //.sendFile = BodyWriter.sendFile,
+                    .sendFile = BodyWriter.sendFile,
                 },
             },
         };
