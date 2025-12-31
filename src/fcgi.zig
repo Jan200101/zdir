@@ -21,6 +21,7 @@ const lockdown = @import("lockdown.zig");
 
 // 30 minutes
 const CACHE_AGE = 60 * 30;
+const MAX_REQUESTS = 10;
 
 const fcgi_version = enum(u8) {
     VERSION_1 = 1,
@@ -60,6 +61,12 @@ const fcgi_header = extern struct {
     reserved: u8 = 0,
 };
 
+const fcgi_end_body = extern struct {
+    app_status: u32,
+    protocol_status: fcgi_protocol_status,
+    reserve: [3]u8 = .{ 0, 0, 0 },
+};
+
 const fcgi_request = struct {
     header: fcgi_header,
     body: ?[]u8,
@@ -70,10 +77,24 @@ const fcgi_request = struct {
     }
 };
 
-const fcgi_end_body = extern struct {
-    app_status: u32,
-    protocol_status: fcgi_protocol_status,
-    reserve: [3]u8 = .{ 0, 0, 0 },
+const fcgi_request_state = struct {
+    path: ?[]u8 = null,
+    params_done: bool = false,
+    stdin_done: bool = false,
+
+    fn receiveComplete(self: *@This()) bool {
+        return self.params_done and self.stdin_done;
+    }
+
+    fn deinit(self: *@This(), allocator: Allocator) void {
+        if (self.path) |path|
+            allocator.free(path);
+    }
+
+    fn reset(self: *@This(), allocator: Allocator) void {
+        self.deinit(allocator);
+        self.* = @This(){};
+    }
 };
 
 const BodyWriter = struct {
@@ -268,14 +289,16 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var params_done: bool = false;
-    var stdin_done: bool = false;
-
-    var path: ?[]u8 = null;
+    var request_states: [MAX_REQUESTS]fcgi_request_state = undefined;
+    defer for (&request_states) |*state| state.deinit(allocator);
+    @memset(&request_states, .{});
 
     while (true) {
         var request = try server.readRequest(allocator);
         defer request.deinit(allocator);
+
+        const request_id = request.header.request_id;
+        const state = &request_states[request_id];
 
         switch (request.header.type) {
             .ABORT_REQUEST => return,
@@ -306,32 +329,32 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                     const param = std.meta.stringToEnum(fcgi_params, name) orelse continue;
                     switch (param) {
                         .PATH_INFO => {
-                            assert(path == null);
-                            path = try allocator.dupe(u8, value);
+                            assert(state.path == null);
+                            state.path = try allocator.dupe(u8, value);
                         },
                     }
                 }
             } else {
-                params_done = true;
-                log.info("received parameters path={?s}", .{path});
+                state.params_done = true;
+                log.info("received parameters for {} path={?s}", .{ request_id, state.path });
             },
             .STDIN => if (request.header.content_length == 0) {
-                stdin_done = true;
-                log.info("received stdin", .{});
+                state.stdin_done = true;
+                log.info("received stdin for {}", .{request_id});
             },
             else => {},
         }
 
-        if (params_done and stdin_done) {
+        if (state.receiveComplete()) {
             log.info("sending response", .{});
 
             {
                 var response_buffer: [1024]u8 = undefined;
-                var response = server.respondStreaming(&response_buffer, .STDOUT, request.header.request_id);
+                var response = server.respondStreaming(&response_buffer, .STDOUT, request_id);
                 defer response.end() catch {};
 
                 const writer = &response.writer;
-                const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", path orelse "/" });
+                const sane_path = try std.fs.path.resolvePosix(allocator, &[_][]const u8{ "/", state.path orelse "/" });
                 defer allocator.free(sane_path);
 
                 try writer.writeAll("Status: 200 OK\r\n");
@@ -350,10 +373,13 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                 }
             }
 
-            try server.endRequest(request.header.request_id, .{
+            try server.endRequest(request_id, .{
                 .app_status = 0,
                 .protocol_status = .REQUEST_COMPLETE,
             });
+
+            state.reset(allocator);
+            log.debug("reset request state {}", .{request_id});
 
             // TODO handle multiplexing
             return;
