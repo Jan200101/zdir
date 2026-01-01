@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const log = std.log;
+const log = std.log.scoped(.fcgi);
 const posix = std.posix;
 const net = std.net;
 const mem = std.mem;
@@ -16,19 +16,13 @@ const Limit = Io.Limit;
 const native_endian = builtin.target.cpu.arch.endian();
 const assert = std.debug.assert;
 const maxInt = std.math.maxInt;
+
 const core = @import("core");
-
-const MimeType = @import("Mime.zig").Type;
+const common = @import("common.zig");
 const lockdown = @import("lockdown.zig");
+const MimeType = @import("Mime.zig").Type;
 
-// 30 minutes
-const CACHE_AGE = 60 * 30;
 const MAX_REQUESTS = 10;
-
-const is_debug = switch (builtin.mode) {
-    .Debug, .ReleaseSafe => true,
-    .ReleaseFast, .ReleaseSmall => false,
-};
 
 const fcgi_version = enum(u8) {
     VERSION_1 = 1,
@@ -192,7 +186,7 @@ const FastCgiServer = struct {
         if (header.padding_length > 0)
             try self.in.discardAll(header.padding_length);
 
-        log.debug("received {s} request {}", .{ @tagName(header.type), header.request_id });
+        log.debug("received {s} request {} len={}", .{ @tagName(header.type), header.request_id, header.content_length });
 
         return .{
             .header = header,
@@ -200,7 +194,9 @@ const FastCgiServer = struct {
         };
     }
 
-    pub fn endRequest(self: *@This(), request_id: u16, end_body: fcgi_end_body) ResponseError!void {
+    pub fn endRequest(self: *@This(), request_id: u16, body: fcgi_end_body) ResponseError!void {
+        var end_body = body;
+        if (native_endian != .big) std.mem.byteSwapAllFields(fcgi_end_body, &end_body);
         try self.respond(.END_REQUEST, request_id, @ptrCast(&end_body));
     }
 
@@ -261,10 +257,8 @@ const FastCgiServer = struct {
     }
 };
 
-var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-
 pub fn main() !void {
-    defer if (is_debug) {
+    defer if (common.is_debug) {
         _ = debug_allocator.deinit();
     };
 
@@ -300,7 +294,7 @@ pub fn main() !void {
         var connection_bw = connection.stream.writer(&send_buffer);
 
         var fastcgi_server: FastCgiServer = .init(connection_br.interface(), &connection_bw.interface);
-        processRequests(root_dir, &fastcgi_server) catch |err| {
+        handleRequest(&fastcgi_server, root_dir) catch |err| {
             log.err("failed to handle request: {s}", .{@errorName(err)});
             if (builtin.mode == .Debug)
                 std.debug.dumpStackTrace(@errorReturnTrace().?.*);
@@ -308,12 +302,14 @@ pub fn main() !void {
     }
 }
 
-fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+
+fn handleRequest(server: *FastCgiServer, root_dir: std.fs.Dir) !void {
     const base_allocator = gpa: {
         if (builtin.target.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
-        break :gpa if (is_debug) debug_allocator.allocator() else std.heap.page_allocator;
+        break :gpa if (common.is_debug) debug_allocator.allocator() else std.heap.page_allocator;
     };
-    defer if (is_debug) {
+    defer if (common.is_debug) {
         _ = debug_allocator.detectLeaks();
     };
 
@@ -412,7 +408,7 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
 
         if (state.receiveComplete()) {
             {
-                var response_buffer: [1024]u8 = undefined;
+                var response_buffer: [4096]u8 = undefined;
                 var response = server.respondStreaming(&response_buffer, .STDOUT, request_id);
                 defer response.end() catch {};
 
@@ -423,7 +419,7 @@ fn processRequests(root_dir: std.fs.Dir, server: *FastCgiServer) !void {
                 try writer.writeAll("Status: 200 OK\r\n");
                 if (core.isAsset(sane_path)) {
                     try writer.print("Content-Type: {s}\n", .{MimeType.fromPath(sane_path).contentType()});
-                    try writer.print("Cache-Control: max-age={}\n", .{CACHE_AGE});
+                    try writer.print("Cache-Control: max-age={}\n", .{common.CACHE_AGE});
                     try writer.writeAll("\n");
                     try core.serveAsset(writer, sane_path);
                 } else if (core.canServeFile(root_dir, sane_path)) {

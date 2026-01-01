@@ -1,18 +1,17 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const log = std.log;
+const log = std.log.scoped(.cgi);
 const http = std.http;
 
 const core = @import("core");
-
-const MimeType = @import("Mime.zig").Type;
+const common = @import("common.zig");
 const lockdown = @import("lockdown.zig");
+const MimeType = @import("Mime.zig").Type;
 
-// 30 minutes
-const CACHE_AGE = 60 * 30;
+var stdout_buffer: [4096]u8 = undefined;
 
-var stdout_buffer: [1024]u8 = undefined;
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 
 pub fn main() !void {
     var root_dir = try core.getRoot();
@@ -20,7 +19,15 @@ pub fn main() !void {
 
     lockdown.lockdown_dir(root_dir);
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const base_allocator = gpa: {
+        if (builtin.target.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
+        break :gpa if (common.is_debug) debug_allocator.allocator() else std.heap.page_allocator;
+    };
+    defer if (common.is_debug) {
+        _ = debug_allocator.deinit();
+    };
+
+    var arena = std.heap.ArenaAllocator.init(base_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
@@ -35,7 +42,7 @@ pub fn main() !void {
 
     if (core.isAsset(sane_path)) {
         try writer.print("Content-Type: {s}\n", .{MimeType.fromPath(sane_path).contentType()});
-        try writer.print("Cache-Control: max-age={}\n", .{CACHE_AGE});
+        try writer.print("Cache-Control: max-age={}\n", .{common.CACHE_AGE});
         try writer.writeAll("\n");
         try core.serveAsset(writer, sane_path);
     } else if (core.canServeFile(root_dir, sane_path)) {

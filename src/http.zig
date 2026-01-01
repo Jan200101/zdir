@@ -1,16 +1,20 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const log = std.log;
+const log = std.log.scoped(.http);
 const http = std.http;
 const HttpServer = http.Server;
 const Address = std.net.Address;
 
 const core = @import("core");
-
+const common = @import("common.zig");
 const lockdown = @import("lockdown.zig");
 
 pub fn main() !void {
+    defer if (common.is_debug) {
+        _ = debug_allocator.deinit();
+    };
+
     var root_dir = try core.getRoot();
     defer root_dir.close();
 
@@ -57,12 +61,22 @@ pub fn main() !void {
     }
 }
 
+var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+
 fn handleRequest(request: *HttpServer.Request, root_dir: std.fs.Dir) !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const base_allocator = gpa: {
+        if (builtin.target.os.tag == .wasi) break :gpa .{ std.heap.wasm_allocator, false };
+        break :gpa if (common.is_debug) debug_allocator.allocator() else std.heap.page_allocator;
+    };
+    defer if (common.is_debug) {
+        _ = debug_allocator.detectLeaks();
+    };
+
+    var arena = std.heap.ArenaAllocator.init(base_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var response_buffer: [1024]u8 = undefined;
+    var response_buffer: [4096]u8 = undefined;
     var response = try request.respondStreaming(&response_buffer, .{ .respond_options = .{
         .keep_alive = false,
     } });

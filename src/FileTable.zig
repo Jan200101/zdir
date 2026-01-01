@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const log = std.log;
+const log = std.log.scoped(.FileTable);
 const Allocator = std.mem.Allocator;
 const Dir = std.fs.Dir;
 const Writer = std.Io.Writer;

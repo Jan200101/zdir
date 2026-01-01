@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
-const log = std.log;
+const log = std.log.scoped(.lockdown);
 
 const core = @import("core");
 const landlock = @import("lockdown/landlock.zig");

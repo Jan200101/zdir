@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const log = std.log;
+const log = std.log.scoped(.zdir);
 const linux = std.os.linux;
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
