@@ -139,6 +139,8 @@ const BodyWriter = struct {
         const data_len = w.end + Writer.countSplat(data, splat);
         const data_limit: Limit = .limited(@min(data_len, maxInt(u16)));
 
+        log.debug("streaming buffered {s} request {} size={}", .{ @tagName(bw.type), bw.request_id, data_limit.toInt().? });
+
         try bw.server.respondHeader(bw.type, bw.request_id, @intCast(data_limit.toInt() orelse unreachable));
         const n = try bw.server.out.writeSplatHeaderLimit(w.buffered(), data, splat, data_limit);
         return w.consume(n);
@@ -148,6 +150,8 @@ const BodyWriter = struct {
         const bw: *BodyWriter = @alignCast(@fieldParentPtr("writer", w));
         const data_len = Writer.countSendFileLowerBound(w.end, file_reader, limit) orelse return error.Unimplemented;
         const data_limit: Limit = .limited(@min(data_len, maxInt(u16)));
+
+        log.debug("streaming raw {s} request {} size={}", .{ @tagName(bw.type), bw.request_id, data_limit.toInt().? });
 
         try bw.server.respondHeader(bw.type, bw.request_id, @intCast(data_limit.toInt() orelse unreachable));
         const n = if (data_limit.subtract(w.buffered().len)) |sendfile_limit|
@@ -159,8 +163,8 @@ const BodyWriter = struct {
     }
 
     pub fn end(bw: *BodyWriter) !void {
-        try bw.server.respondEmpty(bw.type, bw.request_id);
         try bw.writer.flush();
+        try bw.server.respondEmpty(bw.type, bw.request_id);
     }
 };
 
@@ -204,6 +208,8 @@ const FastCgiServer = struct {
         if (bytes.len == 0)
             return;
 
+        log.debug("sending {s} request {} size={}", .{ @tagName(ftype), request_id, bytes.len });
+
         var i: usize = 0;
         while (i < bytes.len) {
             const end = @min(i + maxInt(u16), bytes.len);
@@ -221,9 +227,9 @@ const FastCgiServer = struct {
     }
 
     pub fn respondEmpty(self: *@This(), ftype: fcgi_type, request_id: u16) ResponseError!void {
-        log.debug("completed {s} request {}", .{ @tagName(ftype), request_id });
         try self.respondHeader(ftype, request_id, 0);
         try self.out.flush();
+        log.debug("completed {s} request {}", .{ @tagName(ftype), request_id });
     }
 
     pub fn respondHeader(self: *@This(), ftype: fcgi_type, request_id: u16, content_length: u16) ResponseError!void {
