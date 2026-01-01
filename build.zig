@@ -29,6 +29,7 @@ pub fn build(b: *std.Build) void {
     });
 
     mod.addOptions("config", options);
+    mod.addAnonymousImport("robots.txt", .{ .root_source_file = b.path("assets/robots.txt") });
     mod.addAnonymousImport("favicon.ico", .{ .root_source_file = b.path("assets/favicon.ico") });
     mod.addAnonymousImport("head.html", .{ .root_source_file = b.path("assets/head.html") });
     mod.addAnonymousImport("body.html", .{ .root_source_file = b.path("assets/body.html") });

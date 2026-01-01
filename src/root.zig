@@ -20,11 +20,13 @@ pub const assets_dir = assets_path ++ "/";
 const Asset = enum {
     @"style.css",
     @"favicon.ico",
+    @"robots.txt",
 
     pub fn content(self: Asset) []const u8 {
         return switch (self) {
             .@"style.css" => @embedFile("style.css"),
             .@"favicon.ico" => @embedFile("favicon.ico"),
+            .@"robots.txt" => @embedFile("robots.txt"),
         };
     }
 
@@ -38,6 +40,9 @@ const Asset = enum {
             return true;
 
         if (std.mem.eql(u8, p, "favicon.ico"))
+            return true;
+
+        if (std.mem.eql(u8, p, "robots.txt"))
             return true;
 
         return false;
