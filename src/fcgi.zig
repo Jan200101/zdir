@@ -373,8 +373,9 @@ fn handleRequest(server: *FastCgiServer, root_dir: std.fs.Dir) !void {
 
                         if ((byte >> 7) == 1) {
                             // 4 bytes long
+                            const mask: u32 = ~@as(u32, 1 << 31);
                             const big_size = try params_reader.takeInt(u32, .big);
-                            len.* = big_size;
+                            len.* = big_size & mask;
                         } else {
                             // 1 byte long
                             len.* = byte;
