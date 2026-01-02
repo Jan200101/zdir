@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const log = std.log.scoped(.zdir);
 const linux = std.os.linux;
 const posix = std.posix;
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ComponentIterator = std.fs.path.ComponentIterator;
 const Dir = std.fs.Dir;
@@ -34,23 +35,24 @@ const Asset = enum {
         if (path.len <= 1)
             return false;
 
+        assert(path[0] == '/');
         const p = path[1..];
 
         if (std.mem.startsWith(u8, p, assets_path))
             return true;
 
-        if (std.mem.eql(u8, p, "favicon.ico"))
-            return true;
+        const root_assets = [_]@This(){
+            .@"favicon.ico",
+            .@"robots.txt",
+        };
 
-        if (std.mem.eql(u8, p, "robots.txt"))
-            return true;
+        for (root_assets) |asset|
+            if (std.mem.eql(u8, p, @tagName(asset)))
+                return true;
 
         return false;
     }
 };
-
-const Head = @import("Head.zig");
-const Body = @import("Body.zig");
 
 pub fn getRoot() !std.fs.Dir {
     return try std.fs.cwd().openDir(config.root_path, .{});
@@ -110,7 +112,7 @@ pub fn serveFile(root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void 
 
 pub fn serveDir(allocator: Allocator, root_dir: std.fs.Dir, writer: *Writer, path: []const u8) !void {
     try writer.print(root_html, .{
-        .head = Head.init(path),
-        .body = Body.init(allocator, root_dir, path),
+        .head = @import("Head.zig").init(path),
+        .body = @import("Body.zig").init(allocator, root_dir, path),
     });
 }
