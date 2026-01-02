@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/env bash
 
 TOPDIR="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
 

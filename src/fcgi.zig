@@ -319,9 +319,8 @@ fn handleRequest(server: *FastCgiServer, root_dir: std.fs.Dir) !void {
 
     var keep_connection: bool = true;
 
-    var request_states: [MAX_REQUESTS]fcgi_request_state = undefined;
+    var request_states: [MAX_REQUESTS]fcgi_request_state = @splat(.{});
     defer for (&request_states) |*state| state.deinit(allocator);
-    @memset(&request_states, .{});
 
     while (true) {
         var request = try server.readRequest(allocator);
