@@ -85,6 +85,44 @@ const fcgi_begin_body = extern struct {
     reserved: [5]u8,
 };
 
+const NameValueIterator = struct {
+    reader: Reader,
+
+    const NameValuePair = struct { name: []const u8, value: []const u8 };
+
+    pub fn init(bytes: []const u8) @This() {
+        return .{
+            .reader = Reader.fixed(bytes),
+        };
+    }
+
+    pub fn next(self: *@This()) !?NameValuePair {
+        var lens: [2]u32 = undefined;
+        for (&lens) |*len| {
+            const byte = self.reader.peekByte() catch |err| switch (err) {
+                error.EndOfStream => return null,
+                else => return err,
+            };
+
+            if ((byte >> 7) == 1) {
+                // 4 bytes long
+                const mask: u32 = ~@as(u32, 1 << 31);
+                const big_size = try self.reader.takeInt(u32, .big);
+                len.* = big_size & mask;
+            } else {
+                // 1 byte long
+                len.* = byte;
+                self.reader.toss(1);
+            }
+        }
+
+        return .{
+            .name = try self.reader.take(lens[0]),
+            .value = try self.reader.take(lens[1]),
+        };
+    }
+};
+
 const fcgi_request = struct {
     header: fcgi_header,
     bytes: ?[]u8,
@@ -99,6 +137,11 @@ const fcgi_request = struct {
         var V: T = mem.bytesToValue(T, self.bytes.?);
         if (native_endian != .big) std.mem.byteSwapAllFields(T, &V);
         return V;
+    }
+
+    pub fn iterateNameValue(self: *@This()) NameValueIterator {
+        assert(self.bytes != null);
+        return .init(self.bytes.?);
     }
 };
 
@@ -360,36 +403,17 @@ fn handleRequest(server: *FastCgiServer, root_dir: std.fs.Dir) !void {
                 state.reset(allocator);
                 continue;
             },
-            .PARAMS => if (request.bytes) |bytes| {
-                var params_reader = Reader.fixed(bytes);
-                var lens: [2]u32 = undefined;
-                read_params: while (true) {
-                    for (&lens) |*len| {
-                        const byte = params_reader.peekByte() catch |err| switch (err) {
-                            error.EndOfStream => break :read_params,
-                            else => return err,
-                        };
-
-                        if ((byte >> 7) == 1) {
-                            // 4 bytes long
-                            const mask: u32 = ~@as(u32, 1 << 31);
-                            const big_size = try params_reader.takeInt(u32, .big);
-                            len.* = big_size & mask;
-                        } else {
-                            // 1 byte long
-                            len.* = byte;
-                            params_reader.toss(1);
-                        }
-                    }
-
-                    const name = try params_reader.take(lens[0]);
-                    const value = try params_reader.take(lens[1]);
-
-                    const param = std.meta.stringToEnum(fcgi_params, name) orelse continue;
+            .PARAMS => if (request.bytes) |_| {
+                var iter = request.iterateNameValue();
+                while (try iter.next()) |pair| {
+                    const param = std.meta.stringToEnum(fcgi_params, pair.name) orelse {
+                        log.debug("unknown param {s}", .{pair.name});
+                        continue;
+                    };
                     switch (param) {
                         .PATH_INFO => {
                             assert(state.path == null);
-                            state.path = try allocator.dupe(u8, value);
+                            state.path = try allocator.dupe(u8, pair.value);
                         },
                     }
                 }
